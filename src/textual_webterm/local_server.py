@@ -590,10 +590,12 @@ class LocalServer:
     <script src=\"/static/js/textual.js\"></script>
     <style>
       body {{ background: #000; margin: 0; padding: 0; }}
+      /* textual-serve relies on injected sizing CSS; make it explicit so layout works even if JS/CSS fail */
+      .textual-terminal {{ width: 100vw; height: 100vh; }}
     </style>
 </head>
 <body>
-    <div class=\"textual-terminal\" data-session-websocket-url={ws_url!r} data-font-size=\"16\"></div>
+    <div id=\"terminal\" class=\"textual-terminal\" data-session-websocket-url=\"{ws_url}\" data-font-size=\"16\"></div>
 </body>
 </html>"""
         return web.Response(text=html_content, content_type="text/html")

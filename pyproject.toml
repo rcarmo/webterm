@@ -6,6 +6,7 @@ authors = ["Will McGugan <will@textualize.io>"]
 license = "MIT"
 readme = "README.md"
 packages = [{include = "textual_webterm", from = "src"}]
+include = [{ path = "src/textual_webterm/static/monospace.css" }]
 
 [tool.poetry.dependencies]
 python = "^3.9"

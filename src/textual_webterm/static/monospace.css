@@ -14,6 +14,17 @@ body {
   font-family: var(--textual-webterm-mono);
 }
 
-.xterm {
-  font-family: var(--textual-webterm-mono);
+/*
+  textual_serve's bundled textual.js hard-codes xterm's Terminal fontFamily:
+  "'Roboto Mono', Monaco, 'Courier New', monospace".
+
+  If Roboto Mono isn't available, it falls back to Courier and looks wrong.
+  We override that here with higher specificity + !important.
+*/
+.textual-terminal .xterm,
+.textual-terminal .xterm .xterm-rows,
+.textual-terminal .xterm .xterm-helper-textarea,
+.textual-terminal .xterm .xterm-viewport,
+.textual-terminal .xterm .xterm-screen {
+  font-family: var(--textual-webterm-mono) !important;
 }
