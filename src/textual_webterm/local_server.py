@@ -589,7 +589,8 @@ class LocalServer:
     <link rel=\"stylesheet\" href=\"/static-webterm/monospace.css\">
     <script src=\"/static/js/textual.js\"></script>
     <style>
-      body {{ background: #000; margin: 0; padding: 0; }}
+      /* Match textual-serve defaults */
+      body {{ background: #0c181f; margin: 0; padding: 0; }}
       /* textual-serve relies on injected sizing CSS; make it explicit so layout works even if JS/CSS fail */
       .textual-terminal {{ width: 100vw; height: 100vh; }}
     </style>
