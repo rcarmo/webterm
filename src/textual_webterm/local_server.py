@@ -110,6 +110,22 @@ class LocalServer:
     def mark_route_activity(self, route_key: str) -> None:
         self._route_last_activity[route_key] = asyncio.get_event_loop().time()
 
+    def _get_cached_screenshot_response(
+        self, request: web.Request, route_key: str
+    ) -> web.Response | None:
+        cached = self._screenshot_cache.get(route_key)
+        if cached is None:
+            return None
+
+        etag = self._screenshot_cache_etag.get(route_key)
+        if etag and request.headers.get("If-None-Match") == etag:
+            raise web.HTTPNotModified(headers={"ETag": etag, "Cache-Control": "no-cache"})
+
+        headers = {"Cache-Control": "no-cache"}
+        if etag:
+            headers["ETag"] = etag
+        return web.Response(text=cached[1], content_type="image/svg+xml", headers=headers)
+
     def _get_screenshot_cache_ttl(self, route_key: str, now: float) -> float:
         last_activity = self._route_last_activity.get(route_key, 0.0)
         idle_for = max(0.0, now - last_activity)
@@ -157,6 +173,7 @@ class LocalServer:
         self._screenshot_cache_etag: dict[str, str] = {}
         self._screenshot_locks: dict[str, asyncio.Lock] = {}
         self._route_last_activity: dict[str, float] = {}
+        self._screenshot_last_rendered_activity: dict[str, float] = {}
 
     @property
     def app_count(self) -> int:
@@ -288,12 +305,14 @@ class LocalServer:
         msg_type = envelope[0]
 
         if msg_type == "stdin":
+            self.mark_route_activity(route_key)
             data = envelope[1] if len(envelope) > 1 else ""
             session_process = self.session_manager.get_session_by_route_key(RouteKey(route_key))
             if session_process:
                 await session_process.send_bytes(data.encode("utf-8"))
 
         elif msg_type == "resize":
+            self.mark_route_activity(route_key)
             size_data = envelope[1] if len(envelope) > 1 else {}
             width = max(1, min(500, int(size_data.get("width", 80))))
             height = max(1, min(500, int(size_data.get("height", 24))))
@@ -422,6 +441,15 @@ class LocalServer:
         if session_process is None or not hasattr(session_process, "get_replay_buffer"):
             raise web.HTTPNotFound(text="Session not found")
 
+        # If nothing has changed since the last render, serve cached screenshot without
+        # touching the session replay buffer.
+        last_activity = self._route_last_activity.get(route_key, 0.0)
+        last_rendered_activity = self._screenshot_last_rendered_activity.get(route_key, -1.0)
+        if last_activity <= last_rendered_activity:
+            cached_response = self._get_cached_screenshot_response(request, route_key)
+            if cached_response is not None:
+                return cached_response
+
         replay_data = await session_process.get_replay_buffer()  # type: ignore[func-returns-value]
         if len(replay_data) > SCREENSHOT_MAX_BYTES:
             replay_data = replay_data[-SCREENSHOT_MAX_BYTES:]
@@ -447,16 +475,17 @@ class LocalServer:
         ttl = self._get_screenshot_cache_ttl(route_key, now)
         cached = self._screenshot_cache.get(route_key)
 
-        if cached is not None:
-            etag = self._screenshot_cache_etag.get(route_key)
-            if etag and request.headers.get("If-None-Match") == etag:
-                raise web.HTTPNotModified(headers={"ETag": etag, "Cache-Control": "no-cache"})
+        # If we have a cached screenshot and the session is idle, keep serving it until
+        # new activity occurs (no periodic re-render).
+        if cached is not None and self._route_last_activity.get(route_key, 0.0) == 0.0:
+            cached_response = self._get_cached_screenshot_response(request, route_key)
+            if cached_response is not None:
+                return cached_response
 
-            if (now - cached[0]) < ttl:
-                headers = {"Cache-Control": "no-cache"}
-                if etag:
-                    headers["ETag"] = etag
-                return web.Response(text=cached[1], content_type="image/svg+xml", headers=headers)
+        if cached is not None and (now - cached[0]) < ttl:
+            cached_response = self._get_cached_screenshot_response(request, route_key)
+            if cached_response is not None:
+                return cached_response
 
         lock = self._screenshot_locks.get(route_key)
         if lock is None:
@@ -467,15 +496,10 @@ class LocalServer:
             # Another request may have refreshed the cache while we waited.
             ttl = self._get_screenshot_cache_ttl(route_key, now)
             cached = self._screenshot_cache.get(route_key)
-            etag = self._screenshot_cache_etag.get(route_key)
-            if cached is not None:
-                if etag and request.headers.get("If-None-Match") == etag:
-                    raise web.HTTPNotModified(headers={"ETag": etag, "Cache-Control": "no-cache"})
-                if (now - cached[0]) < ttl:
-                    headers = {"Cache-Control": "no-cache"}
-                    if etag:
-                        headers["ETag"] = etag
-                    return web.Response(text=cached[1], content_type="image/svg+xml", headers=headers)
+            if cached is not None and (now - cached[0]) < ttl:
+                cached_response = self._get_cached_screenshot_response(request, route_key)
+                if cached_response is not None:
+                    return cached_response
 
             def _render_svg() -> str:
                 console = Console(record=True, width=width, height=height, file=io.StringIO())
@@ -508,6 +532,9 @@ class LocalServer:
             etag = hashlib.sha1(svg.encode("utf-8"), usedforsecurity=False).hexdigest()
             self._screenshot_cache[route_key] = (asyncio.get_event_loop().time(), svg)
             self._screenshot_cache_etag[route_key] = etag
+            self._screenshot_last_rendered_activity[route_key] = self._route_last_activity.get(
+                route_key, 0.0
+            )
             headers = {"Cache-Control": "no-cache", "ETag": etag}
             return web.Response(text=svg, content_type="image/svg+xml", headers=headers)
 
