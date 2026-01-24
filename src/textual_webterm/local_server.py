@@ -44,6 +44,18 @@ SVG_MONO_FONT_STACK = (
     '"DejaVu Sans Mono", "Courier New", monospace'
 )
 
+# Map pyte color names to Rich-compatible names
+PYTE_TO_RICH_COLOR = {
+    "brightblack": "bright_black",
+    "brightred": "bright_red",
+    "brightgreen": "bright_green",
+    "brightyellow": "bright_yellow",
+    "brightblue": "bright_blue",
+    "brightmagenta": "bright_magenta",
+    "brightcyan": "bright_cyan",
+    "brightwhite": "bright_white",
+}
+
 WEBTERM_STATIC_PATH = Path(__file__).parent / "static"
 
 
@@ -541,11 +553,12 @@ class LocalServer:
                         char_data = char.data if char.data else " "
 
                         # Build Rich style from pyte character attributes
+                        # Map pyte color names to Rich-compatible names
                         style_kwargs = {}
                         if char.fg != "default":
-                            style_kwargs["color"] = char.fg
+                            style_kwargs["color"] = PYTE_TO_RICH_COLOR.get(char.fg, char.fg)
                         if char.bg != "default":
-                            style_kwargs["bgcolor"] = char.bg
+                            style_kwargs["bgcolor"] = PYTE_TO_RICH_COLOR.get(char.bg, char.bg)
                         if char.bold:
                             style_kwargs["bold"] = True
                         if char.italics:
