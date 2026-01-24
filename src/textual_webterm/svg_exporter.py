@@ -256,14 +256,18 @@ class _Span(TypedDict):
 
 
 def _is_box_drawing(char: str) -> bool:
-    """Check if character is a box-drawing or block element that needs precise positioning."""
+    """Check if character is a box-drawing character that needs precise positioning.
+
+    Only actual box-drawing characters (lines, corners) need separate positioning.
+    Block elements (█▀▄ etc.) can merge as they're often used in sequences.
+    """
     if not char:
         return False
     code = ord(char[0])
-    # Box Drawing: U+2500-U+257F
-    # Block Elements: U+2580-U+259F
-    # Geometric Shapes (some): U+25A0-U+25FF
-    return 0x2500 <= code <= 0x259F or 0x25A0 <= code <= 0x25FF
+    # Box Drawing only: U+2500-U+257F (lines, corners, junctions)
+    # NOT block elements (U+2580-U+259F) - those can merge
+    # NOT geometric shapes (U+25A0-U+25FF) - those can merge
+    return 0x2500 <= code <= 0x257F
 
 
 def _should_break_span(current_text: str, new_char: str) -> bool:
