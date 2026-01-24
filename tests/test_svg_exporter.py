@@ -238,17 +238,18 @@ class TestBuildRowSpans:
         assert spans[2]["has_bg"] is False
 
     def test_wide_char_placeholder_skipped(self) -> None:
-        """Empty placeholder cells (after wide chars) are skipped."""
+        """Empty placeholder cells (after wide chars) are skipped but counted in columns."""
         row = [
             self._char("A"),
             self._char("中"),  # Wide char
-            self._char(""),  # Placeholder - should be skipped
+            self._char(""),  # Placeholder - should be skipped but counted
             self._char("B"),
         ]
         spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
         # Should merge into single span since all default style
         assert len(spans) == 1
         assert spans[0]["text"] == "A中B"
+        assert spans[0]["columns"] == 4  # 1 + 1 + 1(placeholder) + 1
 
     def test_multiple_wide_chars(self) -> None:
         """Multiple wide characters handled correctly."""
@@ -263,6 +264,7 @@ class TestBuildRowSpans:
         spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
         assert len(spans) == 1
         assert spans[0]["text"] == "日本語"
+        assert spans[0]["columns"] == 6  # Each wide char + placeholder = 2 columns
 
     def test_emoji_with_placeholder(self) -> None:
         """Emoji characters with placeholders handled."""
@@ -276,6 +278,7 @@ class TestBuildRowSpans:
         spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
         assert len(spans) == 1
         assert spans[0]["text"] == "🎉 🚀"
+        assert spans[0]["columns"] == 5  # 2 + 1 + 2
 
     def test_mixed_styles_complex(self) -> None:
         """Complex mix of styles produces correct spans."""

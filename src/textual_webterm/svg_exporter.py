@@ -178,9 +178,10 @@ def render_terminal_svg(
         x = 10.0  # Starting x position with padding
         for span in spans:
             text = span["text"]
+            columns = span["columns"]
             if not text or (text.isspace() and not span["has_bg"]):
                 # Skip empty spans without background, but advance position
-                x += len(text) * char_width
+                x += columns * char_width
                 continue
 
             # Build tspan attributes
@@ -203,7 +204,7 @@ def render_terminal_svg(
 
             # Background needs a separate rect
             if span["has_bg"] and span["bg"] != background:
-                bg_width = len(text) * char_width
+                bg_width = columns * char_width
                 bg_y = y - font_size + 2
                 parts.insert(
                     -1,  # Insert before current text element
@@ -213,7 +214,7 @@ def render_terminal_svg(
                 )
 
             parts.append(f'<tspan {" ".join(attrs)}>{_escape_xml(text)}</tspan>')
-            x += len(text) * char_width
+            x += columns * char_width
 
         parts.append("</text>")
 
@@ -227,6 +228,7 @@ class _Span(TypedDict):
     """A span of text with consistent styling."""
 
     text: str
+    columns: int  # Number of terminal columns this span occupies
     fg: str
     bg: str
     bold: bool
@@ -250,8 +252,11 @@ def _build_row_spans(
     for char in row_data:
         char_data = char["data"]
 
-        # Skip empty placeholder cells (after wide characters)
+        # Empty placeholder cells (after wide characters) count as a column
+        # but don't add text
         if not char_data:
+            if current_span is not None:
+                current_span["columns"] += 1
             continue
 
         # Get colors, handling reverse video
@@ -274,12 +279,14 @@ def _build_row_spans(
             and current_span["has_bg"] == has_bg
         ):
             current_span["text"] += char_data
+            current_span["columns"] += 1
         else:
             # Start new span
             if current_span is not None:
                 spans.append(current_span)
             current_span = {
                 "text": char_data,
+                "columns": 1,
                 "fg": fg,
                 "bg": bg,
                 "bold": char["bold"],
