@@ -48,7 +48,7 @@ FONT_FAMILY = (
 )
 FONT_SIZE = 14
 LINE_HEIGHT = 1.2
-CHAR_WIDTH = 8.4  # Approximate width of monospace character at 14px
+CHAR_WIDTH = 8  # Width of monospace character at 14px (typically ~0.57 ratio)
 
 
 class CharData(TypedDict):
