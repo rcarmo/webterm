@@ -152,8 +152,6 @@ class TestRenderTerminalSvg:
     def test_css_properties(self) -> None:
         """SVG includes essential CSS properties for proper rendering."""
         svg = render_terminal_svg([], width=80, height=24)
-        # Check for proper baseline alignment
-        assert "dominant-baseline: text-before-edge" in svg
         # Check for legibility optimization
         assert "text-rendering: optimizeLegibility" in svg
         # Check for monospace font

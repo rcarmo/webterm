@@ -138,6 +138,9 @@ def render_terminal_svg(
     parts.append(f"<title>{_escape_xml(title)}</title>")
 
     # Style definitions
+    # Note: We use alphabetic baseline (default) and offset text y by font_size
+    # to align text top with rect top. This is more compatible across browsers
+    # than dominant-baseline: text-before-edge which has Safari issues.
     parts.append("<defs><style>")
     parts.append(
         f".terminal-bg {{ fill: {background}; }}"
@@ -146,7 +149,6 @@ def render_terminal_svg(
         f"font-size: {font_size}px; "
         f"fill: {foreground}; "
         f"white-space: pre; "
-        f"dominant-baseline: text-before-edge; "
         f"text-rendering: optimizeLegibility; "
         f"}}"
         f".bold {{ font-weight: bold; }}"
@@ -167,8 +169,11 @@ def render_terminal_svg(
     # Render each row - use explicit x position for EACH character
     # to ensure pixel-perfect alignment regardless of font metrics
     for row_idx, row_data in enumerate(screen_buffer):
-        # With dominant-baseline: text-before-edge, text top aligns to y
-        y = 10 + row_idx * actual_line_height
+        # rect_y is the top of the cell
+        rect_y = 10 + row_idx * actual_line_height
+        # text_y is the baseline position (alphabetic baseline = bottom of lowercase letters)
+        # For most fonts, baseline is roughly at font_size from top of em box
+        text_y = rect_y + font_size
 
         if not row_data:
             continue
@@ -205,7 +210,7 @@ def render_terminal_svg(
             if bg != background:
                 bg_width = char_cols * char_width
                 row_bg_rects.append(
-                    f'<rect x="{x:.1f}" y="{y:.1f}" '
+                    f'<rect x="{x:.1f}" y="{rect_y:.1f}" '
                     f'width="{bg_width:.1f}" height="{actual_line_height:.1f}" '
                     f'fill="{bg}"/>'
                 )
@@ -234,7 +239,7 @@ def render_terminal_svg(
         if row_bg_rects or row_tspans:
             parts.extend(row_bg_rects)
             if row_tspans:
-                parts.append(f'<text y="{y:.1f}">')
+                parts.append(f'<text y="{text_y:.1f}">')
                 parts.extend(row_tspans)
                 parts.append("</text>")
 
