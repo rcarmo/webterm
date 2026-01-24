@@ -113,11 +113,12 @@ class TerminalSession(Session):
         return (buf[1], buf[0])  # cols, rows
 
     async def _sync_pyte_to_pty(self) -> None:
-        """Sync pyte screen size to actual PTY size."""
+        """Sync pyte screen size to actual PTY size and trigger redraw."""
         if self.master_fd is None:
             return
         loop = asyncio.get_running_loop()
         width, height = await loop.run_in_executor(None, self._get_terminal_size)
+        needs_redraw = False
         async with self._screen_lock:
             if self._screen.columns != width or self._screen.lines != height:
                 log.debug("Syncing pyte screen from %dx%d to %dx%d",
@@ -125,6 +126,17 @@ class TerminalSession(Session):
                 self._screen.resize(height, width)
                 self._last_width = width
                 self._last_height = height
+                needs_redraw = True
+        # Toggle PTY size outside lock to force tmux to redraw
+        if needs_redraw:
+            await loop.run_in_executor(
+                None, self._set_terminal_size, width - 1, height
+            )
+            await loop.run_in_executor(
+                None, self._set_terminal_size, width, height
+            )
+            # Brief delay to let redraw data arrive
+            await asyncio.sleep(0.1)
 
     async def set_terminal_size(self, width: int, height: int) -> None:
         # Track the size for reconnection
