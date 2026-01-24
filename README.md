@@ -15,6 +15,9 @@ Built on top of [textual-serve](https://github.com/Textualize/textual-serve), th
 - 🔄 **Session reconnection** - Refresh the page and reconnect to the same session
 - 🎨 **Full terminal emulation** - Colors, cursor, and ANSI codes work correctly
 - 📐 **Auto-sizing** - Terminal automatically resizes to fit the browser window
+- 📸 **Live screenshots** - Dashboard shows real-time SVG screenshots of terminals
+- 📊 **CPU sparklines** - Dashboard displays 30-minute CPU history for Docker containers
+- ⚡ **SSE updates** - Real-time screenshot updates via Server-Sent Events
 - 🚀 **Simple CLI** - One command to start serving
 
 ## Non-Features
@@ -62,9 +65,9 @@ textual-webterm --host 0.0.0.0 --port 8080 bash
 
 Then open http://localhost:8080 in your browser.
 
-## Landing pages
+## Session Dashboard
 
-You can serve a landing page with multiple terminal tiles driven by a YAML manifest:
+You can serve a dashboard with multiple terminal tiles driven by a YAML manifest:
 
 ```yaml
 - name: My Service
@@ -78,8 +81,9 @@ Run with:
 textual-webterm --landing-manifest landing.yaml
 ```
 
-You can also point to a docker-compose file; services with the label `webterm-command`
-become tiles. For example:
+### Docker Compose Integration
+
+Point to a docker-compose file; services with the label `webterm-command` become tiles:
 
 ```yaml
 services:
@@ -95,9 +99,14 @@ Start with:
 textual-webterm --compose-manifest compose.yaml
 ```
 
-When a landing manifest is provided, the root (`/`) shows the grid; clicking a tile
-opens a dedicated terminal session in a new tab. Without a manifest, the server
-operates in single-terminal mode.
+In compose mode, the dashboard displays **CPU sparklines** showing 30 minutes of container CPU usage history (requires access to Docker socket at `/var/run/docker.sock`).
+
+### Dashboard Features
+
+- **Live screenshots** - Terminal thumbnails update in real-time via SSE when activity occurs
+- **CPU sparklines** - Mini charts showing container CPU usage (compose mode only)
+- **Tab reuse** - Clicking the same tile reopens the existing browser tab
+- **Auto-focus** - Terminals automatically receive keyboard focus on load
 
 ## CLI Reference
 
@@ -120,6 +129,17 @@ Options:
   --version                     Show the version and exit.
   --help                        Show this message and exit.
 ```
+
+## API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/` | Dashboard (with manifest) or terminal view |
+| `/ws/{route_key}` | WebSocket for terminal I/O |
+| `/screenshot.svg?route_key=...` | SVG screenshot of terminal |
+| `/cpu-sparkline.svg?container=...` | CPU sparkline SVG (compose mode) |
+| `/events` | SSE stream for activity notifications |
+| `/health` | Health check endpoint |
 
 ## Development
 
@@ -145,7 +165,8 @@ make install-dev
 
 - WebSocket protocol (browser <-> server) is JSON: `["stdin", data]`, `["resize", {"width": w, "height": h}]`, `["ping", data]`.
 - Static assets are provided by `textual-serve`; this project does not add custom static files.
-- `/screenshot.svg` replays the terminal buffer to SVG via Rich; width can be set with `?width=120` and is clamped for safety.
+- Screenshots use [pyte](https://github.com/selectel/pyte) for ANSI interpretation and [Rich](https://github.com/Textualize/rich) for SVG rendering.
+- CPU stats are read directly from Docker socket using asyncio (no additional dependencies).
 
 ## Requirements
 
@@ -161,3 +182,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [Textual](https://github.com/Textualize/textual) - TUI framework for Python
 - [textual-serve](https://github.com/Textualize/textual-serve) - Serve Textual apps on the web
 - [Rich](https://github.com/Textualize/rich) - Rich text formatting for terminals
+- [pyte](https://github.com/selectel/pyte) - PYTE terminal emulator
