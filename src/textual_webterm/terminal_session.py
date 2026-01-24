@@ -105,6 +105,27 @@ class TerminalSession(Session):
         assert self.master_fd is not None
         fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, buf)
 
+    def _get_terminal_size(self) -> tuple[int, int]:
+        """Get actual PTY size. Returns (width, height)."""
+        assert self.master_fd is not None
+        buf = array.array("h", [0, 0, 0, 0])
+        fcntl.ioctl(self.master_fd, termios.TIOCGWINSZ, buf)
+        return (buf[1], buf[0])  # cols, rows
+
+    async def _sync_pyte_to_pty(self) -> None:
+        """Sync pyte screen size to actual PTY size."""
+        if self.master_fd is None:
+            return
+        loop = asyncio.get_running_loop()
+        width, height = await loop.run_in_executor(None, self._get_terminal_size)
+        async with self._screen_lock:
+            if self._screen.columns != width or self._screen.lines != height:
+                log.debug("Syncing pyte screen from %dx%d to %dx%d",
+                         self._screen.columns, self._screen.lines, width, height)
+                self._screen.resize(height, width)
+                self._last_width = width
+                self._last_height = height
+
     async def set_terminal_size(self, width: int, height: int) -> None:
         # Track the size for reconnection
         self._last_width = width
@@ -174,6 +195,9 @@ class TerminalSession(Session):
             - buffer: list of rows, each containing character data with styling
             - has_changes: True if screen has changed since last call
         """
+        # Sync pyte to actual PTY size before reading state
+        await self._sync_pyte_to_pty()
+
         async with self._screen_lock:
             width = self._screen.columns
             height = self._screen.lines
