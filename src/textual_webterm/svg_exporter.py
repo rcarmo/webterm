@@ -173,9 +173,38 @@ def render_terminal_svg(
             continue
 
         # Start text element for this row
-        parts.append(f'<text y="{y:.1f}">')
+        # First collect all background rects, then the text element
+        row_bg_rects: list[str] = []
 
         x = 10.0  # Starting x position with padding
+        for span in spans:
+            text = span["text"]
+            columns = span["columns"]
+
+            # Background needs a separate rect (collected before text)
+            if span["has_bg"] and span["bg"] != background:
+                bg_width = columns * char_width
+                bg_y = y - font_size + 2
+                row_bg_rects.append(
+                    f'<rect x="{x:.1f}" y="{bg_y:.1f}" '
+                    f'width="{bg_width:.1f}" height="{actual_line_height:.1f}" '
+                    f'fill="{span["bg"]}"/>'
+                )
+
+            if not text or (text.isspace() and not span["has_bg"]):
+                # Skip empty spans without background, but advance position
+                x += columns * char_width
+                continue
+
+            x += columns * char_width
+
+        # Add background rects first
+        parts.extend(row_bg_rects)
+
+        # Now add the text element
+        parts.append(f'<text y="{y:.1f}">')
+
+        x = 10.0  # Reset x position for text rendering
         for span in spans:
             text = span["text"]
             columns = span["columns"]
@@ -201,17 +230,6 @@ def render_terminal_svg(
                 classes.append("underline")
             if classes:
                 attrs.append(f'class="{" ".join(classes)}"')
-
-            # Background needs a separate rect
-            if span["has_bg"] and span["bg"] != background:
-                bg_width = columns * char_width
-                bg_y = y - font_size + 2
-                parts.insert(
-                    -1,  # Insert before current text element
-                    f'<rect x="{x:.1f}" y="{bg_y:.1f}" '
-                    f'width="{bg_width:.1f}" height="{actual_line_height:.1f}" '
-                    f'fill="{span["bg"]}"/>',
-                )
 
             parts.append(f'<tspan {" ".join(attrs)}>{_escape_xml(text)}</tspan>')
             x += columns * char_width
