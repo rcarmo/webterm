@@ -724,11 +724,12 @@ class LocalServer:
             route_key = RouteKey(generate().lower())
 
         ws_url = self._get_ws_url_from_request(request, route_key)
+        page_title = available_app.name if available_app else "Textual Web Terminal"
 
         html_content = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>Textual Web Terminal</title>
+    <title>{page_title}</title>
     <link rel=\"stylesheet\" href=\"/static/css/xterm.css\">
     <link rel=\"stylesheet\" href=\"/static-webterm/monospace.css\">
     <script src=\"/static/js/textual.js\"></script>

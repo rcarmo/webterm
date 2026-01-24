@@ -1,0 +1,2 @@
+- [ ] Set tab title to the container name
+- [ ] screenshots are still showing the tmux bar creeping up and slowly taking over the screenshot

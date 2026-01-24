@@ -494,6 +494,7 @@ class TestLocalServerMoreCoverage:
         assert "/static-webterm/monospace.css" in resp.text
         assert "data-session-websocket-url" in resp.text
         assert "data-font-size" in resp.text
+        assert "<title>Known</title>" in resp.text
 
     def test_rewrite_svg_fonts_removes_font_face_and_forces_stack(self):
         svg = (
