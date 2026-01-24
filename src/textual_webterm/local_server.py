@@ -680,15 +680,6 @@ class LocalServer:
             # Container param is slug, but stats are stored by service name
             service_name = self._slug_to_service.get(container, container)
             values = self._docker_stats.get_cpu_history(service_name)
-            if not values:
-                log.debug(
-                    "No CPU history for container=%s service=%s (available=%s)",
-                    container,
-                    service_name,
-                    list(self._docker_stats._cpu_history.keys()),
-                )
-        else:
-            log.debug("Docker stats collector not available")
 
         svg = render_sparkline_svg(values, width=width, height=height)
         headers = {"Cache-Control": "no-cache, max-age=0"}

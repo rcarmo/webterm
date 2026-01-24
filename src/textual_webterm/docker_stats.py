@@ -50,16 +50,17 @@ class DockerStatsCollector:
         def _sync_request() -> bytes | None:
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                sock.settimeout(5.0)
+                sock.settimeout(10.0)  # Increased timeout
                 sock.connect(self._socket_path)
 
-                request = f"GET {path} HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                # Use HTTP/1.0 to avoid chunked encoding
+                request = f"GET {path} HTTP/1.0\r\nHost: localhost\r\n\r\n"
                 sock.sendall(request.encode())
 
                 # Read response
                 chunks = []
                 while True:
-                    chunk = sock.recv(4096)
+                    chunk = sock.recv(8192)
                     if not chunk:
                         break
                     chunks.append(chunk)
@@ -80,50 +81,32 @@ class DockerStatsCollector:
         """Parse HTTP response from Docker socket."""
         try:
             response_str = response.decode("utf-8", errors="replace")
+
             # Split headers and body
             if "\r\n\r\n" not in response_str:
-                log.debug("No header separator in response for %s", path)
                 return None
 
-            _, body = response_str.split("\r\n\r\n", 1)
+            headers, body = response_str.split("\r\n\r\n", 1)
+
+            # Check for error status
+            first_line = headers.split("\r\n")[0]
+            if "200" not in first_line and "OK" not in first_line:
+                return None
+
             body = body.strip()
 
-            # Try direct parse first
+            # With HTTP/1.0, body should be plain JSON
             if body.startswith("{") or body.startswith("["):
-                first_line = body.split("\r\n")[0] if "\r\n" in body else body
-                return json.loads(first_line)
+                return json.loads(body)
 
-            # Handle chunked transfer encoding
-            lines = body.split("\r\n")
-            for i, raw_line in enumerate(lines):
-                stripped = raw_line.strip()
+            # Fallback: try to find JSON in body
+            for line in body.split("\r\n"):
+                stripped = line.strip()
                 if stripped.startswith("{") or stripped.startswith("["):
-                    result = self._try_parse_chunked_json(stripped, lines[i + 1:])
-                    if result is not None:
-                        return result
+                    return json.loads(stripped)
 
-            log.debug("Could not find JSON in response for %s, body preview: %s", path, body[:200] if body else "(empty)")
             return None
-        except (json.JSONDecodeError, ValueError) as e:
-            log.debug("JSON parse error for %s: %s", path, e)
-            return None
-
-    def _try_parse_chunked_json(self, first_part: str, remaining_lines: list[str]) -> dict | list | None:
-        """Try to parse JSON that may be split across chunked encoding."""
-        try:
-            return json.loads(first_part)
-        except json.JSONDecodeError:
-            pass
-
-        # Try joining remaining lines (skip chunk size markers)
-        json_parts = [first_part]
-        for raw_line in remaining_lines:
-            part = raw_line.strip()
-            if part and not part.isalnum():  # Skip hex chunk sizes
-                json_parts.append(part)
-        try:
-            return json.loads("".join(json_parts))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, Exception):
             return None
 
     async def _discover_containers(self, service_names: list[str]) -> dict[str, str]:
@@ -135,10 +118,7 @@ class DockerStatsCollector:
         # List all containers
         containers = await self._make_request("/containers/json")
         if not isinstance(containers, list):
-            log.debug("Container list request returned non-list: %s", type(containers))
             return {}
-
-        log.debug("Found %d containers, looking for services: %s", len(containers), service_names)
 
         mapping: dict[str, str] = {}
         for container in containers:
@@ -153,7 +133,6 @@ class DockerStatsCollector:
             service = labels.get("com.docker.compose.service", "")
             if service in service_names:
                 mapping[service] = container_id
-                log.debug("Matched service %s -> %s (via label)", service, container_id)
                 continue
 
             # Fall back to container name matching
@@ -164,14 +143,10 @@ class DockerStatsCollector:
                 for svc in service_names:
                     if svc in clean_name or clean_name == svc:
                         mapping[svc] = container_id
-                        log.debug("Matched service %s -> %s (via name %s)", svc, container_id, clean_name)
                         break
 
-        if not mapping:
-            # Log what we found for debugging
-            found_services = [c.get("Labels", {}).get("com.docker.compose.service", "?") for c in containers if isinstance(c, dict)]
-            found_names = [c.get("Names", ["?"])[0] if c.get("Names") else "?" for c in containers if isinstance(c, dict)]
-            log.debug("No matches. Container services: %s, names: %s", found_services, found_names)
+        if mapping:
+            log.debug("Discovered %d containers for stats", len(mapping))
 
         return mapping
 
@@ -222,7 +197,6 @@ class DockerStatsCollector:
         stats = await self._make_request(path)
 
         if not isinstance(stats, dict):
-            log.debug("Stats request for %s (%s) returned non-dict: %s", service_name, container_id, type(stats))
             return
 
         cpu_stats = stats.get("cpu_stats", {})
@@ -233,30 +207,24 @@ class DockerStatsCollector:
             if service_name not in self._cpu_history:
                 self._cpu_history[service_name] = deque(maxlen=STATS_HISTORY_SIZE)
             self._cpu_history[service_name].append(cpu_percent)
-            log.debug("CPU for %s: %.1f%% (history size: %d)", service_name, cpu_percent, len(self._cpu_history[service_name]))
-        else:
-            log.debug("CPU calculation returned None for %s", service_name)
 
     async def _poll_loop(self, service_names: list[str]) -> None:
         """Background polling loop."""
         # Discover container IDs on first run and periodically refresh
         service_to_container: dict[str, str] = {}
         refresh_counter = 0
+        warned_no_containers = False
 
         while self._running:
             # Refresh container mapping every 30 iterations (~5 minutes at 10s interval)
             if refresh_counter % 30 == 0:
                 service_to_container = await self._discover_containers(service_names)
-                if service_to_container:
-                    log.debug(
-                        "Discovered containers: %s",
-                        ", ".join(f"{k}={v}" for k, v in service_to_container.items()),
+                if not service_to_container and not warned_no_containers:
+                    log.warning(
+                        "No Docker containers found for CPU stats. "
+                        "Ensure Docker socket is mounted (-v /var/run/docker.sock:/var/run/docker.sock)"
                     )
-                else:
-                    log.debug(
-                        "No containers found for services: %s",
-                        ", ".join(service_names),
-                    )
+                    warned_no_containers = True
 
             refresh_counter += 1
 
