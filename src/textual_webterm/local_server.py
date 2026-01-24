@@ -712,7 +712,7 @@ class LocalServer:
             html_content = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>Textual WebTerm Dashboard</title>
+    <title>Session Dashboard</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 16px; background: #0f172a; color: #e2e8f0; }}
         h1 {{ margin-bottom: 8px; }}
