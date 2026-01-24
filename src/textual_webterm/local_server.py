@@ -14,9 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiohttp
+import pyte
 from aiohttp import WSMsgType, web
-from rich.ansi import AnsiDecoder
 from rich.console import Console
+from rich.style import Style
+from rich.text import Text
 
 from . import constants
 from .exit_poller import ExitPoller
@@ -469,11 +471,6 @@ class LocalServer:
             if cached_response is not None:
                 return cached_response
 
-        # Get screen lines directly from the terminal session's pyte screen
-        # This provides accurate terminal state without replay buffer truncation issues
-        lines = await session_process.get_screen_lines()  # type: ignore[union-attr]
-        screen_text = "\n".join(lines)
-
         try:
             width = int(request.query.get("width", "120"))
         except ValueError:
@@ -485,6 +482,18 @@ class LocalServer:
         except ValueError:
             height = DISCONNECT_RESIZE[1]
         height = max(5, min(200, height))
+
+        # Hybrid approach for colored screenshots:
+        # 1. Get screen dimensions from pyte (accurate viewport)
+        # 2. Get raw ANSI from replay buffer for colors
+        # 3. Use pyte to interpret the ANSI and get proper screen state
+        # 4. Render through Rich for SVG with colors
+        replay_data = await session_process.get_replay_buffer()  # type: ignore[union-attr]
+        # Limit replay data to prevent excessive processing
+        max_replay = 128 * 1024  # 128KB should be plenty for a screen
+        if len(replay_data) > max_replay:
+            replay_data = replay_data[-max_replay:]
+        ansi_text = replay_data.decode("utf-8", errors="replace")
 
         now = asyncio.get_event_loop().time()
         ttl = self._get_screenshot_cache_ttl(route_key, now)
@@ -517,10 +526,41 @@ class LocalServer:
                     return cached_response
 
             def _render_svg() -> str:
+                # Use pyte to interpret ANSI sequences and get accurate screen state
+                screen = pyte.Screen(width, height)
+                stream = pyte.Stream(screen)
+                stream.feed(ansi_text)
+
+                # Convert pyte screen buffer to Rich Text with colors
                 console = Console(record=True, width=width, height=height, file=io.StringIO())
-                decoder = AnsiDecoder()
-                for renderable in decoder.decode(screen_text):
-                    console.print(renderable)
+
+                for row in range(height):
+                    line = Text()
+                    for col in range(width):
+                        char = screen.buffer[row][col]
+                        char_data = char.data if char.data else " "
+
+                        # Build Rich style from pyte character attributes
+                        style_kwargs = {}
+                        if char.fg != "default":
+                            style_kwargs["color"] = char.fg
+                        if char.bg != "default":
+                            style_kwargs["bgcolor"] = char.bg
+                        if char.bold:
+                            style_kwargs["bold"] = True
+                        if char.italics:
+                            style_kwargs["italic"] = True
+                        if char.underscore:
+                            style_kwargs["underline"] = True
+                        if char.reverse:
+                            style_kwargs["reverse"] = True
+
+                        if style_kwargs:
+                            line.append(char_data, Style(**style_kwargs))
+                        else:
+                            line.append(char_data)
+
+                    console.print(line, end="\n", highlight=False)
 
                 return console.export_svg(
                     title="textual-webterm",

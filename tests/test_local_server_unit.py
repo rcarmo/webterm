@@ -195,6 +195,7 @@ class TestLocalServerHelpers:
 
         session = MagicMock()
         session.get_screen_lines = AsyncMock(return_value=["hello", ""])
+        session.get_replay_buffer = AsyncMock(return_value=b"hello\r\n")
 
         monkeypatch.setattr(server.session_manager, "get_session_by_route_key", lambda _rk: session)
 
@@ -213,6 +214,7 @@ class TestLocalServerHelpers:
 
         session = MagicMock()
         session.get_screen_lines = AsyncMock(return_value=["world", ""])
+        session.get_replay_buffer = AsyncMock(return_value=b"world\r\n")
 
         # Pretend app exists for slug "known"
         server.session_manager.apps_by_slug["known"] = App(
@@ -564,6 +566,7 @@ class TestLocalServerMoreCoverage:
 
         session = MagicMock()
         session.get_screen_lines = AsyncMock(return_value=["hello", ""])
+        session.get_replay_buffer = AsyncMock(return_value=b"hello\n")
         monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
 
         resp = await server_with_no_apps._handle_screenshot(request)
@@ -735,14 +738,15 @@ class TestLocalServerMoreCoverage:
         assert created is True
 
     @pytest.mark.asyncio
-    async def test_handle_screenshot_uses_get_screen_lines(self, server_with_no_apps, monkeypatch):
-        """Test that screenshot uses get_screen_lines() from terminal session."""
+    async def test_handle_screenshot_uses_replay_buffer_with_pyte(self, server_with_no_apps, monkeypatch):
+        """Test that screenshot uses replay buffer with pyte for colored rendering."""
         request = MagicMock()
         request.query = {"route_key": "rk"}
         request.headers = {}
 
         session = MagicMock()
         session.get_screen_lines = AsyncMock(return_value=["line1", "line2", ""])
+        session.get_replay_buffer = AsyncMock(return_value=b"line1\r\nline2\r\n")
         monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
 
         server_with_no_apps._route_last_activity["rk"] = 1.0
@@ -750,4 +754,4 @@ class TestLocalServerMoreCoverage:
         resp = await server_with_no_apps._handle_screenshot(request)
         assert resp.content_type == "image/svg+xml"
         assert "<svg" in resp.text
-        session.get_screen_lines.assert_awaited_once()
+        session.get_replay_buffer.assert_awaited_once()
