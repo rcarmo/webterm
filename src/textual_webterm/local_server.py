@@ -53,7 +53,22 @@ PYTE_TO_RICH_COLOR = {
     "brightmagenta": "bright_magenta",
     "brightcyan": "bright_cyan",
     "brightwhite": "bright_white",
+    "brown": "yellow",  # pyte uses 'brown' for ANSI yellow
 }
+
+
+def _pyte_color_to_rich(color: str) -> str:
+    """Convert pyte color to Rich-compatible color string."""
+    if color == "default":
+        return color
+    # Check mapping first
+    if color in PYTE_TO_RICH_COLOR:
+        return PYTE_TO_RICH_COLOR[color]
+    # If it looks like a hex color without #, add it
+    if len(color) == 6 and all(c in "0123456789abcdefABCDEF" for c in color):
+        return f"#{color}"
+    return color
+
 
 WEBTERM_STATIC_PATH = Path(__file__).parent / "static"
 
@@ -546,12 +561,12 @@ class LocalServer:
                         char_data = char["data"]
 
                         # Build Rich style from pyte character attributes
-                        # Map pyte color names to Rich-compatible names
+                        # Convert pyte color names to Rich-compatible format
                         style_kwargs = {}
                         if char["fg"] != "default":
-                            style_kwargs["color"] = PYTE_TO_RICH_COLOR.get(char["fg"], char["fg"])
+                            style_kwargs["color"] = _pyte_color_to_rich(char["fg"])
                         if char["bg"] != "default":
-                            style_kwargs["bgcolor"] = PYTE_TO_RICH_COLOR.get(char["bg"], char["bg"])
+                            style_kwargs["bgcolor"] = _pyte_color_to_rich(char["bg"])
                         if char["bold"]:
                             style_kwargs["bold"] = True
                         if char["italics"]:
