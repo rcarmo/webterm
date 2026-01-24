@@ -222,13 +222,10 @@ def render_terminal_svg(
             if classes:
                 attrs.append(f'class="{" ".join(classes)}"')
 
-            # For horizontal box-drawing spans, use textLength to ensure correct width
-            # This prevents gaps caused by font rendering of ─ being narrower than char_width
-            # Use "mostly" check to handle occasional corrupted chars (like U+FFFD)
-            if _is_mostly_horizontal_box_drawing(text) and len(text) > 1:
-                span_width = columns * char_width
-                attrs.append(f'textLength="{span_width:.1f}"')
-                attrs.append('lengthAdjust="spacing"')
+            # Note: textLength with lengthAdjust="spacing" was tried but causes
+            # visual positioning issues. The browser adds spacing between chars
+            # which shifts subsequent text visually even though x coords are correct.
+            # Accepting slight gaps in horizontal lines is preferable to cursor misalignment.
 
             parts.append(f'<tspan {" ".join(attrs)}>{_escape_xml(text)}</tspan>')
             x += columns * char_width

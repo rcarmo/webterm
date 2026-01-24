@@ -829,8 +829,8 @@ class TestEdgeCases:
         assert "─" in svg
         assert "┐" in svg
 
-    def test_horizontal_lines_use_textlength(self) -> None:
-        """Horizontal line spans use textLength for correct width."""
+    def test_horizontal_lines_render_without_textlength(self) -> None:
+        """Horizontal lines render without textLength (removed due to positioning issues)."""
         buffer = [[
             self._char("╭"),
             self._char("─"),
@@ -839,9 +839,11 @@ class TestEdgeCases:
             self._char("╮"),
         ]]
         svg = render_terminal_svg(buffer, width=5, height=1)
-        # Horizontal lines should have textLength attribute
-        assert 'textLength="24.0"' in svg
-        assert 'lengthAdjust="spacing"' in svg
+        # Horizontal lines should NOT have textLength (causes visual offset issues)
+        assert 'textLength=' not in svg
+        assert 'lengthAdjust=' not in svg
+        # But the characters should still be present
+        assert "─" in svg or "───" in svg
 
     def test_ansi_bright_colors(self) -> None:
         """All bright ANSI colors render."""
