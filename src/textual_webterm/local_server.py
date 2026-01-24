@@ -381,8 +381,12 @@ class LocalServer:
                         session_created = await self._dispatch_ws_message(
                             envelope, route_key, ws, session_created
                         )
-                    except Exception as e:
-                        log.error("Error processing WebSocket message: %s", e)
+                    except json.JSONDecodeError as e:
+                        log.warning("Invalid JSON in WebSocket message: %s", e)
+                    except (TypeError, KeyError, ValueError) as e:
+                        log.warning("Malformed WebSocket message: %s", e)
+                    except OSError as e:
+                        log.error("I/O error processing WebSocket message: %s", e)
                 elif msg.type == WSMsgType.ERROR:
                     log.error("WebSocket connection error for route %s", route_key)
                     break
