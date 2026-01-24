@@ -73,7 +73,7 @@ class TestDockerStatsCollector:
         assert collector.available is False
 
         # Just touching the file isn't enough - need actual socket connectivity
-        # Since we can't easily create a real Unix socket in tests, 
+        # Since we can't easily create a real Unix socket in tests,
         # verify that a non-socket file returns False
         socket_path.touch()
         assert collector.available is False  # File exists but can't connect
