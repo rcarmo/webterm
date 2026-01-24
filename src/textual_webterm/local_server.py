@@ -589,6 +589,10 @@ class LocalServer:
                     for char in row_data:
                         char_data = char["data"]
 
+                        # Skip empty placeholder cells (after wide characters)
+                        if not char_data:
+                            continue
+
                         # Build Rich style from pyte character attributes
                         # Convert pyte color names to Rich-compatible format
                         style_kwargs = {}
