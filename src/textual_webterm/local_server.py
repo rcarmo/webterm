@@ -147,9 +147,13 @@ def _rewrite_svg_fonts(svg: str) -> str:
 
 class LocalServer:
     def mark_route_activity(self, route_key: str) -> None:
-        self._route_last_activity[route_key] = asyncio.get_event_loop().time()
-        # Notify SSE subscribers of activity
-        self._notify_activity(route_key)
+        now = asyncio.get_event_loop().time()
+        self._route_last_activity[route_key] = now
+        # Throttle SSE notifications - max once per second per route
+        last_notified = self._route_last_sse_notification.get(route_key, 0.0)
+        if now - last_notified >= 1.0:
+            self._route_last_sse_notification[route_key] = now
+            self._notify_activity(route_key)
 
     def _notify_activity(self, route_key: str) -> None:
         """Notify SSE subscribers that a route has activity."""
@@ -222,6 +226,7 @@ class LocalServer:
         self._screenshot_cache_etag: dict[str, str] = {}
         self._screenshot_locks: dict[str, asyncio.Lock] = {}
         self._route_last_activity: dict[str, float] = {}
+        self._route_last_sse_notification: dict[str, float] = {}
 
         # SSE subscribers for activity notifications
         self._sse_subscribers: list[asyncio.Queue[str]] = []
@@ -874,12 +879,33 @@ class LocalServer:
         // SSE connection for real-time screenshot updates
         let eventSource = null;
         let sparklineTimer = null;
+        // Debounce tracking per tile
+        const pendingRefresh = {{}};
+        const lastRefresh = {{}};
+        const REFRESH_DEBOUNCE_MS = 2000;  // Min 2s between refreshes per tile
+
+        function scheduleRefreshTile(slug) {{
+            const now = Date.now();
+            const last = lastRefresh[slug] || 0;
+            // If we refreshed recently, schedule for later
+            if (now - last < REFRESH_DEBOUNCE_MS) {{
+                if (!pendingRefresh[slug]) {{
+                    pendingRefresh[slug] = setTimeout(() => {{
+                        pendingRefresh[slug] = null;
+                        refreshTile(slug);
+                    }}, REFRESH_DEBOUNCE_MS - (now - last));
+                }}
+                return;
+            }}
+            refreshTile(slug);
+            lastRefresh[slug] = now;
+        }}
 
         function startSSE() {{
             if (eventSource) return;
             eventSource = new EventSource('/events');
             eventSource.addEventListener('activity', (e) => {{
-                refreshTile(e.data);
+                scheduleRefreshTile(e.data);
             }});
             eventSource.onerror = () => {{
                 // Reconnect on error
