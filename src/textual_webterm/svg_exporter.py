@@ -50,6 +50,25 @@ FONT_SIZE = 14
 LINE_HEIGHT = 1.2
 CHAR_WIDTH = 8  # Width of monospace character at 14px (typically ~0.57 ratio)
 
+# Box drawing characters that need vertical scaling to fill line height
+# These are designed to connect between lines but the font's em-box is smaller
+# than our line height, creating gaps
+BOX_DRAWING_CHARS = frozenset(
+    # Light and heavy box drawing (U+2500-U+257F)
+    "─━│┃┄┅┆┇┈┉┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋"
+    # Double box drawing
+    "═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬"
+    # Rounded corners
+    "╭╮╯╰"
+    # Light and heavy dashed (U+2571-U+257F)
+    "\u2571\u2572\u2573╴╵╶╷╸╹╺╻╼╽╾╿"
+)
+
+
+def _is_box_drawing(char: str) -> bool:
+    """Check if character is a box-drawing character that needs scaling."""
+    return len(char) == 1 and char in BOX_DRAWING_CHARS
+
 
 class CharData(TypedDict):
     """Character data from pyte screen buffer."""
@@ -232,7 +251,20 @@ def render_terminal_svg(
             if classes:
                 attrs.append(f'class="{" ".join(classes)}"')
 
-            row_tspans.append(f'<tspan {" ".join(attrs)}>{_escape_xml(char_data)}</tspan>')
+            # Box-drawing characters need vertical scaling to fill line height
+            # Render them as separate text elements with transform
+            if _is_box_drawing(char_data):
+                # Scale vertically by line_height ratio, anchored at top of cell
+                # The transform scales around (x, rect_y) to stretch the glyph
+                fill_attr = f' fill="{fg}"' if fg != foreground else ""
+                class_attr = f' class="{" ".join(classes)}"' if classes else ""
+                row_bg_rects.append(
+                    f'<text x="{x:.1f}" y="{text_y:.1f}" '
+                    f'transform="translate(0,{rect_y:.1f}) scale(1,{line_height}) translate(0,{-rect_y:.1f})"'
+                    f'{fill_attr}{class_attr}>{_escape_xml(char_data)}</text>'
+                )
+            else:
+                row_tspans.append(f'<tspan {" ".join(attrs)}>{_escape_xml(char_data)}</tspan>')
 
             col += char_cols
 

@@ -328,6 +328,22 @@ class TestRenderTerminalSvg:
         # Text tspan with yellow
         assert f'fill="{ANSI_COLORS["yellow"]}"' in svg
 
+    def test_box_drawing_vertical_scale(self) -> None:
+        """Box-drawing characters are scaled vertically to fill line height."""
+        buffer = [[self._char("│")]]  # Vertical line
+        svg = render_terminal_svg(buffer, width=80, height=24)
+        # Box drawing chars rendered with transform for vertical scaling
+        assert 'scale(1,1.2)' in svg
+        # Should be a separate text element, not a tspan
+        assert '<text x="' in svg
+
+    def test_box_drawing_corners(self) -> None:
+        """Box-drawing corner characters are scaled."""
+        buffer = [[self._char("┌"), self._char("┐")]]
+        svg = render_terminal_svg(buffer, width=80, height=24)
+        # Both corners should have scale transforms
+        assert svg.count('scale(1,1.2)') == 2
+
     def test_unicode_text(self) -> None:
         """Unicode text is preserved."""
         buffer = self._make_buffer(["你好世界"])
