@@ -255,40 +255,49 @@ class _Span(TypedDict):
     has_bg: bool
 
 
-def _is_box_drawing(char: str) -> bool:
-    """Check if character is a box-drawing character that needs precise positioning.
+def _is_box_drawing_vertical_or_corner(char: str) -> bool:
+    """Check if character is a vertical box-drawing or corner that needs precise positioning.
 
-    Only actual box-drawing characters (lines, corners) need separate positioning.
-    Block elements (█▀▄ etc.) can merge as they're often used in sequences.
+    Horizontal lines (─━═) can merge since they form continuous lines.
+    Vertical lines (│┃║) and corners/junctions need separate positioning.
     """
     if not char:
         return False
     code = ord(char[0])
-    # Box Drawing only: U+2500-U+257F (lines, corners, junctions)
-    # NOT block elements (U+2580-U+259F) - those can merge
-    # NOT geometric shapes (U+25A0-U+25FF) - those can merge
-    return 0x2500 <= code <= 0x257F
+    # Not in box drawing range at all
+    if not (0x2500 <= code <= 0x257F):
+        return False
+    # Horizontal lines can merge: ─ ━ ═ (and their variants)
+    # U+2500-U+2501: ─ ━
+    # U+2504-U+250B: ┄ ┅ ┆ ┇ ┈ ┉ ┊ ┋ (dashed, but ┆┇┊┋ are vertical)
+    # U+254C-U+254F: ╌ ╍ ╎ ╏ (dashed)
+    # U+2550: ═
+    horizontal_chars = {
+        0x2500, 0x2501,  # ─ ━
+        0x2504, 0x2505,  # ┄ ┅ (horizontal dashed)
+        0x2508, 0x2509,  # ┈ ┉ (horizontal dashed)
+        0x254C, 0x254D,  # ╌ ╍ (horizontal dashed)
+        0x2550,          # ═
+        0x2574, 0x2576, 0x2578, 0x257A, 0x257C, 0x257E,  # partial horizontal
+    }
+    return code not in horizontal_chars
 
 
 def _should_break_span(current_text: str, new_char: str) -> bool:
     """Check if we should break the span before adding new_char.
 
-    Box-drawing characters should not merge with different box-drawing chars
-    or with regular text, but same box-drawing chars can merge (e.g., ─────).
+    Vertical box-drawing and corners should not merge with other chars.
+    Horizontal box-drawing can merge with same horizontal chars.
     """
     if not current_text:
         return False
 
     last_char = current_text[-1]
-    curr_is_box = _is_box_drawing(last_char)
-    new_is_box = _is_box_drawing(new_char)
+    curr_needs_break = _is_box_drawing_vertical_or_corner(last_char)
+    new_needs_break = _is_box_drawing_vertical_or_corner(new_char)
 
-    # If transitioning between box and non-box, break
-    if curr_is_box != new_is_box:
-        return True
-
-    # If both are box-drawing but different characters, break
-    return curr_is_box and new_is_box and last_char != new_char
+    # If either char needs precise positioning, break
+    return curr_needs_break or new_needs_break
 
 
 def _build_row_spans(
