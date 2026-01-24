@@ -687,17 +687,15 @@ class TestLocalServerMoreCoverage:
         assert created["called"] is True
 
     def test_build_routes_logs_error_when_static_path_missing(self, server_with_no_apps, monkeypatch):
-        from pathlib import Path
+        from unittest.mock import MagicMock
 
         from textual_webterm import local_server
 
-        class FakePath(Path):
-            _flavour = type(Path())._flavour
+        # Create a mock path that returns False for exists()
+        fake_path = MagicMock()
+        fake_path.exists.return_value = False
 
-            def exists(self) -> bool:  # type: ignore[override]
-                return False
-
-        monkeypatch.setattr(local_server, "STATIC_PATH", FakePath("/definitely-missing"))
+        monkeypatch.setattr(local_server, "STATIC_PATH", fake_path)
         monkeypatch.setattr(local_server.log, "error", MagicMock())
 
         server_with_no_apps._build_routes()
