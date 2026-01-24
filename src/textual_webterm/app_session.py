@@ -11,7 +11,6 @@ from enum import Enum, auto
 from time import monotonic
 from typing import TYPE_CHECKING
 
-import rich.repr
 from importlib_metadata import version
 
 from . import constants
@@ -41,7 +40,6 @@ class ProcessState(Enum):
         return self.name
 
 
-@rich.repr.auto(angular=True)
 class AppSession(Session):
     """Runs a single app process."""
 
@@ -128,11 +126,9 @@ class AppSession(Session):
         """Check if the app session is still running."""
         return self._state == ProcessState.RUNNING
 
-    def __rich_repr__(self) -> rich.repr.Result:
-        yield self.command
-        yield "id", self.session_id
-        if self._process is not None:
-            yield "returncode", self._process.returncode, None
+    def __repr__(self) -> str:
+        returncode = self._process.returncode if self._process else None
+        return f"<AppSession {self.command!r} id={self.session_id!r} returncode={returncode}>"
 
     async def open(self, width: int = 80, height: int = 24) -> None:
         """Open the process."""

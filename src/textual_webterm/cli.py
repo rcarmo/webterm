@@ -10,17 +10,15 @@ from pathlib import Path
 
 import click
 from importlib_metadata import version
-from rich.logging import RichHandler
 
 from . import constants
 from .local_server import LocalServer
 
-FORMAT = "%(message)s"
+FORMAT = "%(asctime)s %(levelname)s %(message)s"
 logging.basicConfig(
     level="DEBUG" if constants.DEBUG else "INFO",
     format=FORMAT,
-    datefmt="[%X]",
-    handlers=[RichHandler(show_path=False)],
+    datefmt="%X",
 )
 
 log = logging.getLogger("textual-webterm")

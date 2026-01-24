@@ -5,19 +5,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
-import io
 import json
 import logging
-import re
 import signal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiohttp
 from aiohttp import WSMsgType, web
-from rich.console import Console
-from rich.style import Style
-from rich.text import Text
 
 from . import constants
 from .docker_stats import DockerStatsCollector, render_sparkline_svg
@@ -26,6 +21,7 @@ from .identity import generate
 from .poller import Poller
 from .session import SessionConnector
 from .session_manager import SessionManager
+from .svg_exporter import render_terminal_svg
 from .types import Meta, RouteKey, SessionID
 
 if TYPE_CHECKING:
@@ -37,50 +33,6 @@ DEFAULT_TERMINAL_SIZE = (132, 45)
 
 SCREENSHOT_CACHE_SECONDS = 1.0
 SCREENSHOT_MAX_CACHE_SECONDS = 60.0
-
-SVG_MONO_FONT_STACK = (
-    'ui-monospace, "SFMono-Regular", "FiraCode Nerd Font", "FiraMono Nerd Font", '
-    '"Fira Code", "Roboto Mono", Menlo, Monaco, Consolas, "Liberation Mono", '
-    '"DejaVu Sans Mono", "Courier New", monospace'
-)
-
-# Map pyte color names to Rich-compatible names
-# pyte uses different naming conventions than Rich for some colors
-PYTE_TO_RICH_COLOR = {
-    # Bright colors (pyte concatenates, Rich uses underscore)
-    "brightblack": "bright_black",
-    "brightred": "bright_red",
-    "brightgreen": "bright_green",
-    "brightbrown": "bright_yellow",  # bright brown = bright yellow
-    "brightyellow": "bright_yellow",
-    "brightblue": "bright_blue",
-    "brightmagenta": "bright_magenta",
-    "bfightmagenta": "bright_magenta",  # typo in pyte's BG_AIXTERM
-    "brightcyan": "bright_cyan",
-    "brightwhite": "bright_white",
-    # Standard colors
-    "brown": "yellow",  # pyte uses 'brown' for ANSI color 33 (yellow)
-}
-
-
-def _pyte_color_to_rich(color: str) -> str:
-    """Convert pyte color to Rich-compatible color string.
-
-    Handles:
-    - Named color mappings (e.g., 'brown' -> 'yellow')
-    - Bright color name format (e.g., 'brightred' -> 'bright_red')
-    - Hex colors from 256-color/truecolor (e.g., 'ff8700' -> '#ff8700')
-    """
-    if color == "default":
-        return color
-    # Check mapping first
-    if color in PYTE_TO_RICH_COLOR:
-        return PYTE_TO_RICH_COLOR[color]
-    # If it looks like a hex color without #, add it
-    if len(color) == 6 and all(c in "0123456789abcdefABCDEF" for c in color):
-        return f"#{color}"
-    return color
-
 
 WEBTERM_STATIC_PATH = Path(__file__).parent / "static"
 
@@ -127,22 +79,6 @@ class LocalClientConnector(SessionConnector):
 
     async def on_close(self) -> None:
         await self.server.handle_session_close(self.session_id, self.route_key)
-
-
-def _rewrite_svg_fonts(svg: str) -> str:
-    """Make Rich SVG output self-contained and aligned with our monospace styling."""
-
-    # Rich export_svg embeds @font-face rules that reference external CDNs.
-    svg = re.sub(r"@font-face\s*\{.*?\}\s*", "", svg, flags=re.DOTALL)
-
-    # Force our local monospace stack even if Rich sets font-family to Fira Code.
-    override = f"\ntext {{ font-family: {SVG_MONO_FONT_STACK} !important; }}\n"
-    if "</style>" in svg:
-        svg = svg.replace("</style>", override + "</style>", 1)
-    else:
-        svg = svg.replace("<svg ", f"<svg><style>{override}</style> ", 1)
-
-    return svg
 
 
 class LocalServer:
@@ -575,68 +511,15 @@ class LocalServer:
                     return cached_response
 
             def _render_svg() -> str:
-                # Use the session's screen buffer directly - this has the correct
-                # dimensions matching the actual terminal, preventing wrapping issues
-                # Add extra height for Rich's clip path generation quirk
-                console = Console(
-                    record=True, width=screen_width, height=screen_height + 2, file=io.StringIO()
-                )
-
-                for row_data in screen_buffer:
-                    line = Text()
-                    for char in row_data:
-                        char_data = char["data"]
-
-                        # Skip empty placeholder cells (after wide characters)
-                        if not char_data:
-                            continue
-
-                        # Build Rich style from pyte character attributes
-                        # Convert pyte color names to Rich-compatible format
-                        style_kwargs = {}
-                        if char["fg"] != "default":
-                            style_kwargs["color"] = _pyte_color_to_rich(char["fg"])
-                        if char["bg"] != "default":
-                            style_kwargs["bgcolor"] = _pyte_color_to_rich(char["bg"])
-                        if char["bold"]:
-                            style_kwargs["bold"] = True
-                        if char["italics"]:
-                            style_kwargs["italic"] = True
-                        if char["underscore"]:
-                            style_kwargs["underline"] = True
-                        if char["reverse"]:
-                            style_kwargs["reverse"] = True
-
-                        if style_kwargs:
-                            line.append(char_data, Style(**style_kwargs))
-                        else:
-                            line.append(char_data)
-
-                    console.print(line, highlight=False)
-
-                return console.export_svg(
+                # Use custom SVG exporter - simpler and more reliable than Rich
+                return render_terminal_svg(
+                    screen_buffer,
+                    width=screen_width,
+                    height=screen_height,
                     title="textual-webterm",
-                    code_format=(
-                        '<svg class="rich-terminal" viewBox="0 0 {terminal_width} {terminal_height}" '
-                        'xmlns="http://www.w3.org/2000/svg">'
-                        '<style>{styles}</style>'
-                        '<defs>'
-                        '<clipPath id="{unique_id}-clip-terminal">'
-                        '<rect x="0" y="0" width="{terminal_width}" height="{terminal_height}" />'
-                        '</clipPath>'
-                        '{lines}'
-                        '</defs>'
-                        '<g clip-path="url(#{unique_id}-clip-terminal)">'
-                        '<rect x="0" y="0" width="{terminal_width}" height="{terminal_height}" fill="#000" />'
-                        '{backgrounds}'
-                        '<g class="{unique_id}-matrix">{matrix}</g>'
-                        '</g>'
-                        '</svg>'
-                    ),
                 )
 
             svg = await asyncio.to_thread(_render_svg)
-            svg = _rewrite_svg_fonts(svg)
             etag = hashlib.sha1(svg.encode("utf-8"), usedforsecurity=False).hexdigest()
             self._screenshot_cache[route_key] = (asyncio.get_event_loop().time(), svg)
             self._screenshot_cache_etag[route_key] = etag

@@ -220,16 +220,16 @@ class TestTerminalSession:
         # Should not raise
         await session.wait()
 
-    def test_rich_repr(self):
-        """Test rich repr output."""
+    def test_repr(self):
+        """Test repr output."""
         from textual_webterm.terminal_session import TerminalSession
 
         mock_poller = MagicMock()
         session = TerminalSession(mock_poller, "test-session", "bash")
 
-        repr_items = list(session.__rich_repr__())
-        assert ("session_id", "test-session") in repr_items
-        assert ("command", "bash") in repr_items
+        repr_str = repr(session)
+        assert "test-session" in repr_str
+        assert "bash" in repr_str
 
     @pytest.mark.asyncio
     async def test_open_uses_shlex_split_and_execvp_with_args(self):

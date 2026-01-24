@@ -14,7 +14,6 @@ from collections import deque
 from typing import TYPE_CHECKING
 
 import pyte
-import rich.repr
 from importlib_metadata import version
 
 from .session import Session, SessionConnector
@@ -33,7 +32,6 @@ DEFAULT_SCREEN_WIDTH = 132
 DEFAULT_SCREEN_HEIGHT = 45
 
 
-@rich.repr.auto
 class TerminalSession(Session):
     """A session that manages a terminal."""
 
@@ -61,9 +59,8 @@ class TerminalSession(Session):
         self._last_height = DEFAULT_SCREEN_HEIGHT
         super().__init__()
 
-    def __rich_repr__(self) -> rich.repr.Result:
-        yield "session_id", self.session_id
-        yield "command", self.command
+    def __repr__(self) -> str:
+        return f"TerminalSession(session_id={self.session_id!r}, command={self.command!r})"
 
     async def open(self, width: int = 80, height: int = 24) -> None:
         log.info("Opening terminal session %s with command: %s", self.session_id, self.command)

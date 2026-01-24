@@ -9,7 +9,6 @@ from textual_webterm.config import App, Config
 from textual_webterm.local_server import (
     LocalClientConnector,
     LocalServer,
-    _rewrite_svg_fonts,
 )
 
 
@@ -238,8 +237,7 @@ class TestLocalServerHelpers:
         response = await server._handle_screenshot(request)
         assert response.content_type == "image/svg+xml"
         assert "<svg" in response.text
-        assert "ui-monospace" in response.text
-        assert "cdnjs.cloudflare.com" not in response.text
+        assert "ui-monospace" in response.text  # Custom exporter uses ui-monospace font
         assert created["called"][0] == "known"
         assert created["called"][1:] == (132, 45)
 
@@ -489,23 +487,6 @@ class TestLocalServerMoreCoverage:
         assert "data-session-websocket-url" in resp.text
         assert "data-font-size" in resp.text
         assert "<title>Known</title>" in resp.text
-
-    def test_rewrite_svg_fonts_removes_font_face_and_forces_stack(self):
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg">'
-            '<style>@font-face{src:url(https://cdnjs.cloudflare.com/x);} text{font-family:Fira Code;}</style>'
-            '<text>hi</text>'
-            '</svg>'
-        )
-        out = _rewrite_svg_fonts(svg)
-        assert "@font-face" not in out
-        assert "cdnjs.cloudflare.com" not in out
-        assert "ui-monospace" in out
-
-    def test_rewrite_svg_fonts_injects_style_if_missing(self):
-        svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>hi</text></svg>'
-        out = _rewrite_svg_fonts(svg)
-        assert "ui-monospace" in out
 
     @pytest.mark.asyncio
     async def test_cached_screenshot_etag_returns_304(self, server_with_no_apps):
