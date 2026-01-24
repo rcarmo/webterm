@@ -584,7 +584,7 @@ class LocalServer:
                     record=True, width=screen_width, height=screen_height, file=io.StringIO()
                 )
 
-                for row_data in screen_buffer:
+                for i, row_data in enumerate(screen_buffer):
                     line = Text()
                     for char in row_data:
                         char_data = char["data"]
@@ -610,7 +610,9 @@ class LocalServer:
                         else:
                             line.append(char_data)
 
-                    console.print(line, end="\n", highlight=False)
+                    # Don't add newline after last row to prevent extra line in SVG
+                    is_last = i == len(screen_buffer) - 1
+                    console.print(line, end="" if is_last else "\n", highlight=False)
 
                 return console.export_svg(
                     title="textual-webterm",
