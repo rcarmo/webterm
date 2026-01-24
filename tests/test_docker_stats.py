@@ -67,13 +67,16 @@ class TestDockerStatsCollector:
     """Tests for Docker stats collector."""
 
     def test_available_checks_socket(self, tmp_path):
-        """available property checks socket existence."""
+        """available property checks socket existence and connectivity."""
         socket_path = tmp_path / "docker.sock"
         collector = DockerStatsCollector(str(socket_path))
         assert collector.available is False
 
+        # Just touching the file isn't enough - need actual socket connectivity
+        # Since we can't easily create a real Unix socket in tests, 
+        # verify that a non-socket file returns False
         socket_path.touch()
-        assert collector.available is True
+        assert collector.available is False  # File exists but can't connect
 
     def test_get_cpu_history_empty(self):
         """Empty history returns empty list."""

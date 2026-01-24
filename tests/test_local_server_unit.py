@@ -168,17 +168,6 @@ class TestLocalServerHelpers:
         ws.send_json.assert_awaited_once_with(["error", "No app configured"])
 
     @pytest.mark.asyncio
-    async def test_resize_on_disconnect_calls_set_terminal_size(self, server, monkeypatch):
-        session = MagicMock()
-        session.set_terminal_size = AsyncMock()
-
-        monkeypatch.setattr(server.session_manager, "get_session_by_route_key", lambda _rk: session)
-
-        await server._resize_on_disconnect("rk")
-
-        session.set_terminal_size.assert_called_once_with(132, 45)
-
-    @pytest.mark.asyncio
     async def test_create_terminal_session_sends_error_if_no_apps(self, server):
         ws = MagicMock()
         ws.send_json = AsyncMock()

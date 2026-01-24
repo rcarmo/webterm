@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("textual-web")
 
-DISCONNECT_RESIZE = (132, 45)
+DEFAULT_TERMINAL_SIZE = (132, 45)
 
 SCREENSHOT_CACHE_SECONDS = 1.0
 SCREENSHOT_MAX_CACHE_SECONDS = 60.0
@@ -431,14 +431,6 @@ class LocalServer:
 
         return session_created
 
-    async def _resize_on_disconnect(self, route_key: str) -> None:
-        session_process = self.session_manager.get_session_by_route_key(RouteKey(route_key))
-        if session_process is None or not hasattr(session_process, "set_terminal_size"):
-            return
-        width, height = DISCONNECT_RESIZE
-        with contextlib.suppress(OSError):
-            await session_process.set_terminal_size(width, height)
-
     async def _handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         route_key = request.match_info["route_key"]
         ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=64 * 1024)
@@ -478,7 +470,6 @@ class LocalServer:
         finally:
             log.info("WebSocket connection closed for route %s", route_key)
             self._websocket_connections.pop(route_key, None)
-            await self._resize_on_disconnect(route_key)
 
         return ws
 
@@ -535,15 +526,15 @@ class LocalServer:
 
         # Parse requested dimensions (used when creating new sessions)
         try:
-            req_width = int(request.query.get("width", str(DISCONNECT_RESIZE[0])))
+            req_width = int(request.query.get("width", str(DEFAULT_TERMINAL_SIZE[0])))
         except ValueError:
-            req_width = DISCONNECT_RESIZE[0]
+            req_width = DEFAULT_TERMINAL_SIZE[0]
         req_width = max(10, min(400, req_width))
 
         try:
-            req_height = int(request.query.get("height", str(DISCONNECT_RESIZE[1])))
+            req_height = int(request.query.get("height", str(DEFAULT_TERMINAL_SIZE[1])))
         except ValueError:
-            req_height = DISCONNECT_RESIZE[1]
+            req_height = DEFAULT_TERMINAL_SIZE[1]
         req_height = max(5, min(200, req_height))
 
         session_process = self.session_manager.get_session_by_route_key(RouteKey(route_key))
