@@ -63,6 +63,11 @@ class TestColorToHex:
         assert _color_to_hex("unknowncolor", is_foreground=True) == DEFAULT_FG
         assert _color_to_hex("unknowncolor", is_foreground=False) == DEFAULT_BG
 
+    def test_rgb_format_returns_default(self) -> None:
+        """RGB format falls back to default (not commonly used in terminals)."""
+        assert _color_to_hex("rgb(255,0,0)", is_foreground=True) == DEFAULT_FG
+        assert _color_to_hex("rgb(0,255,0)", is_foreground=False) == DEFAULT_BG
+
     def test_gray_aliases(self) -> None:
         """Gray/grey aliases work."""
         assert _color_to_hex("gray") == ANSI_COLORS["gray"]
@@ -298,6 +303,32 @@ class TestBuildRowSpans:
         assert spans[2]["text"] == "o"
         assert spans[2]["italic"] is True
 
+    def test_placeholder_at_start_ignored(self) -> None:
+        """Empty placeholder at start of row is ignored."""
+        row = [
+            self._char(""),  # Orphan placeholder at start
+            self._char("A"),
+            self._char("B"),
+        ]
+        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
+        assert len(spans) == 1
+        assert spans[0]["text"] == "AB"
+        assert spans[0]["columns"] == 2  # Placeholder not counted (no prior span)
+
+    def test_style_change_after_wide_char(self) -> None:
+        """Style change right after a wide character placeholder works."""
+        row = [
+            self._char("中", fg="red"),
+            self._char(""),  # Placeholder
+            self._char("A", fg="blue"),
+        ]
+        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
+        assert len(spans) == 2
+        assert spans[0]["text"] == "中"
+        assert spans[0]["columns"] == 2  # Wide char + placeholder
+        assert spans[1]["text"] == "A"
+        assert spans[1]["columns"] == 1
+
 
 class TestRenderTerminalSvg:
     """Tests for render_terminal_svg function."""
@@ -333,6 +364,20 @@ class TestRenderTerminalSvg:
         assert svg.startswith("<svg")
         assert svg.endswith("</svg>")
         assert 'xmlns="http://www.w3.org/2000/svg"' in svg
+
+    def test_buffer_with_empty_rows(self) -> None:
+        """Buffer with rows containing only empty cells produces valid SVG."""
+        # Row with only empty placeholder cells (no actual characters)
+        buffer = [
+            [self._char("") for _ in range(10)],  # Empty row
+            [self._char("A")],  # Normal row
+            [self._char("") for _ in range(10)],  # Another empty row
+        ]
+        svg = render_terminal_svg(buffer, width=10, height=3)
+        assert svg.startswith("<svg")
+        assert "A" in svg
+        # Should only have 1 text element with content (for "A")
+        assert svg.count("<tspan") == 1
 
     def test_basic_text_output(self) -> None:
         """Basic text is included in SVG."""

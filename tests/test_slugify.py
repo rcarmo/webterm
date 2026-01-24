@@ -38,3 +38,12 @@ class TestSlugify:
         """Test that leading/trailing spaces are handled."""
         result = slugify("  hello  ")
         assert "hello" in result
+
+    def test_allow_unicode_preserves_unicode(self):
+        """Test that allow_unicode=True preserves unicode characters."""
+        # With allow_unicode=True, unicode chars are normalized but preserved
+        result = slugify("héllo wörld", allow_unicode=True)
+        assert result == "héllo-wörld"
+        # Without allow_unicode (default), non-ASCII is transliterated
+        result_ascii = slugify("héllo wörld", allow_unicode=False)
+        assert result_ascii == "hello-world"
