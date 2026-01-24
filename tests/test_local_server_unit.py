@@ -111,8 +111,24 @@ class TestLocalServerHelpers:
     """Tests for LocalServer helper methods."""
 
     def test_apply_carriage_returns_overwrites_line(self):
-        text = "hello\rworld\nnext"
-        assert _apply_carriage_returns(text) == ["world", "next"]
+        text = "hello\rworld\r\nnext"
+        # pyte terminal emulator interprets CR properly - overwrites hello with world
+        lines = _apply_carriage_returns(text, width=80, height=24)
+        # First line should have "world" (overwritten), second line "next"
+        assert lines[0] == "world"
+        assert lines[1] == "next"
+
+    def test_apply_carriage_returns_handles_cursor_positioning(self):
+        # Simulate tmux-style cursor positioning to row 5, column 1 (\x1b[5;1H)
+        # Then clear to end of line (\x1b[K) and write new content
+        # Use \r\n for proper line endings
+        text = "line1\r\nline2\r\nline3\r\nline4\r\nline5\x1b[5;1H\x1b[Kupdated"
+        lines = _apply_carriage_returns(text, width=80, height=10)
+        # Line 5 (index 4) should be overwritten with "updated"
+        assert lines[4] == "updated"
+        # Previous lines should remain
+        assert lines[0] == "line1"
+        assert lines[1] == "line2"
 
     @pytest.mark.asyncio
     async def test_keyboard_interrupt_closes_sessions_and_websockets(self, server, monkeypatch):
@@ -755,7 +771,7 @@ class TestLocalServerMoreCoverage:
 
         captured = {"len": None}
 
-        def apply_cr(text: str):
+        def apply_cr(text: str, width: int = 80, height: int = 24):
             captured["len"] = len(text)
             return ["x"]
 

@@ -21,6 +21,7 @@ importlib-metadata = ">=6.0.0"
 httpx = ">=0.27.0"
 tomli = { version = "^2.0.1", python = "<3.11" }
 pyyaml = "^6.0.0"
+pyte = "^0.8.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

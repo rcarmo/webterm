@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiohttp
+import pyte
 from aiohttp import WSMsgType, web
 from rich.ansi import AnsiDecoder
 from rich.console import Console
@@ -107,26 +108,17 @@ def _rewrite_svg_fonts(svg: str) -> str:
     return svg
 
 
-def _apply_carriage_returns(text: str) -> list[str]:
-    """Interpret \r as 'return to start of line' (overwrite), not a newline.
+def _apply_carriage_returns(text: str, width: int = 80, height: int = 24) -> list[str]:
+    """Use pyte terminal emulator to properly interpret ANSI escape sequences.
 
-    This prevents terminals that redraw a single line (progress bars, prompts) from
-    expanding into many duplicate lines in screenshots.
+    This handles cursor positioning, screen clearing, and other terminal control
+    codes that cause issues like tmux status bars "creeping up" in screenshots.
     """
-
-    lines: list[str] = []
-    current: list[str] = []
-    for ch in text:
-        if ch == "\r":
-            current.clear()
-        elif ch == "\n":
-            lines.append("".join(current))
-            current.clear()
-        else:
-            current.append(ch)
-    if current:
-        lines.append("".join(current))
-    return lines
+    screen = pyte.Screen(width, height)
+    stream = pyte.Stream(screen)
+    stream.feed(text)
+    # Return lines from the display, stripping trailing whitespace
+    return [line.rstrip() for line in screen.display]
 
 
 class LocalServer:
@@ -490,9 +482,9 @@ class LocalServer:
             height = DISCONNECT_RESIZE[1]
         height = max(5, min(200, height))
 
-        lines = _apply_carriage_returns(ansi_text)
-        if len(lines) > height:
-            ansi_text = "\n".join(lines[-height:]) + "\n"
+        # Use pyte terminal emulator to get clean screen state
+        lines = _apply_carriage_returns(ansi_text, width, height)
+        ansi_text = "\n".join(lines)
 
         now = asyncio.get_event_loop().time()
         ttl = self._get_screenshot_cache_ttl(route_key, now)
