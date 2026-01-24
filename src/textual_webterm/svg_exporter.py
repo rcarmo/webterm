@@ -191,8 +191,8 @@ def render_terminal_svg(
                     f'fill="{span["bg"]}"/>'
                 )
 
-            if not text or (text.isspace() and not span["has_bg"]):
-                # Skip empty spans without background, but advance position
+            if not text:
+                # Skip truly empty spans (wide char placeholders already counted)
                 x += columns * char_width
                 continue
 
@@ -208,13 +208,18 @@ def render_terminal_svg(
         for span in spans:
             text = span["text"]
             columns = span["columns"]
-            if not text or (text.isspace() and not span["has_bg"]):
-                # Skip empty spans without background, but advance position
+            if not text:
+                # Skip truly empty spans
                 x += columns * char_width
                 continue
 
             # Build tspan attributes
             attrs = [f'x="{x:.1f}"']
+
+            # Use textLength to enforce exact character spacing for alignment
+            span_width = columns * char_width
+            attrs.append(f'textLength="{span_width:.1f}"')
+            attrs.append('lengthAdjust="spacingAndGlyphs"')
 
             # Foreground color
             if span["fg"] != foreground:
