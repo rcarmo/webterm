@@ -199,7 +199,7 @@ class TestLocalServerHelpers:
             [{"data": " ", "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False}] * 80,
         ]
         session = MagicMock()
-        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer))
+        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
 
         monkeypatch.setattr(server.session_manager, "get_session_by_route_key", lambda _rk: session)
 
@@ -222,7 +222,7 @@ class TestLocalServerHelpers:
             [{"data": " ", "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False}] * 80,
         ]
         session = MagicMock()
-        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer))
+        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
 
         # Pretend app exists for slug "known"
         server.session_manager.apps_by_slug["known"] = App(
@@ -548,23 +548,23 @@ class TestLocalServerMoreCoverage:
         assert server_with_no_apps._get_screenshot_cache_ttl("rk", now=1000.0) == 60.0
 
     @pytest.mark.asyncio
-    async def test_handle_screenshot_uses_cache_when_no_new_activity(self, server_with_no_apps, monkeypatch):
+    async def test_handle_screenshot_uses_cache_when_no_changes(self, server_with_no_apps, monkeypatch):
+        """Test that cached screenshot is returned when pyte reports no changes."""
         request = MagicMock()
         request.query = {"route_key": "rk"}
         request.headers = {}
 
+        # has_changes=False indicates no screen changes since last call
         session = MagicMock()
-        session.get_screen_state = AsyncMock(return_value=(80, 2, []))
+        session.get_screen_state = AsyncMock(return_value=(80, 2, [], False))
         monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
 
         server_with_no_apps._screenshot_cache["rk"] = (0.0, "<svg>cached</svg>")
         server_with_no_apps._screenshot_cache_etag["rk"] = "etag"
         server_with_no_apps._route_last_activity["rk"] = 5.0
-        server_with_no_apps._screenshot_last_rendered_activity["rk"] = 5.0
 
         resp = await server_with_no_apps._handle_screenshot(request)
         assert "cached" in resp.text
-        session.get_screen_state.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_handle_screenshot_renders_screen_state(self, server_with_no_apps, monkeypatch):
@@ -578,7 +578,7 @@ class TestLocalServerMoreCoverage:
             [{"data": " ", "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False}] * 80,
         ]
         session = MagicMock()
-        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer))
+        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
         monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
 
         resp = await server_with_no_apps._handle_screenshot(request)
@@ -760,7 +760,7 @@ class TestLocalServerMoreCoverage:
             [{"data": c, "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False} for c in "line2" + " " * 75],
         ]
         session = MagicMock()
-        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer))
+        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
         monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
 
         server_with_no_apps._route_last_activity["rk"] = 1.0

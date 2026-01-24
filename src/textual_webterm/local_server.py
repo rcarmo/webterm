@@ -211,7 +211,6 @@ class LocalServer:
         self._screenshot_cache_etag: dict[str, str] = {}
         self._screenshot_locks: dict[str, asyncio.Lock] = {}
         self._route_last_activity: dict[str, float] = {}
-        self._screenshot_last_rendered_activity: dict[str, float] = {}
 
     @property
     def app_count(self) -> int:
@@ -516,30 +515,21 @@ class LocalServer:
         if session_process is None or not hasattr(session_process, "get_screen_state"):
             raise web.HTTPNotFound(text="Session not found")
 
-        # If nothing has changed since the last render, serve cached screenshot without
-        # touching the session replay buffer.
-        last_activity = self._route_last_activity.get(route_key, 0.0)
-        last_rendered_activity = self._screenshot_last_rendered_activity.get(route_key, -1.0)
-        if last_activity <= last_rendered_activity:
+        # Get the actual screen state from the terminal session's pyte screen
+        # This includes has_changes flag from pyte's dirty tracking
+        screen_width, screen_height, screen_buffer, has_changes = await session_process.get_screen_state()  # type: ignore[union-attr]
+
+        # If screen hasn't changed, serve cached screenshot immediately
+        cached = self._screenshot_cache.get(route_key)
+        if cached is not None and not has_changes:
             cached_response = self._get_cached_screenshot_response(request, route_key)
             if cached_response is not None:
                 return cached_response
-
-        # Get the actual screen state from the terminal session's pyte screen
-        # This uses the correct dimensions that match what the terminal is rendering
-        screen_width, screen_height, screen_buffer = await session_process.get_screen_state()  # type: ignore[union-attr]
 
         now = asyncio.get_event_loop().time()
         ttl = self._get_screenshot_cache_ttl(route_key, now)
-        cached = self._screenshot_cache.get(route_key)
 
-        # If we have a cached screenshot and the session is idle, keep serving it until
-        # new activity occurs (no periodic re-render).
-        if cached is not None and self._route_last_activity.get(route_key, 0.0) == 0.0:
-            cached_response = self._get_cached_screenshot_response(request, route_key)
-            if cached_response is not None:
-                return cached_response
-
+        # Also check time-based cache for recently rendered screenshots
         if cached is not None and (now - cached[0]) < ttl:
             cached_response = self._get_cached_screenshot_response(request, route_key)
             if cached_response is not None:
@@ -620,9 +610,6 @@ class LocalServer:
             etag = hashlib.sha1(svg.encode("utf-8"), usedforsecurity=False).hexdigest()
             self._screenshot_cache[route_key] = (asyncio.get_event_loop().time(), svg)
             self._screenshot_cache_etag[route_key] = etag
-            self._screenshot_last_rendered_activity[route_key] = self._route_last_activity.get(
-                route_key, 0.0
-            )
             headers = {"Cache-Control": "no-cache", "ETag": etag}
             return web.Response(text=svg, content_type="image/svg+xml", headers=headers)
 

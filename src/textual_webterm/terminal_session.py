@@ -140,16 +140,23 @@ class TerminalSession(Session):
         async with self._screen_lock:
             return [line.rstrip() for line in self._screen.display]
 
-    async def get_screen_state(self) -> tuple[int, int, list]:
+    async def get_screen_state(self) -> tuple[int, int, list, bool]:
         """Get the current screen state including dimensions and character buffer.
 
         Returns:
-            Tuple of (width, height, buffer) where buffer is a list of rows,
-            each row containing character data with styling attributes.
+            Tuple of (width, height, buffer, has_changes) where:
+            - width: screen width in columns
+            - height: screen height in rows
+            - buffer: list of rows, each containing character data with styling
+            - has_changes: True if screen has changed since last call
         """
         async with self._screen_lock:
             width = self._screen.columns
             height = self._screen.lines
+            # Check if any rows are dirty (changed since last clear)
+            has_changes = len(self._screen.dirty) > 0
+            # Clear dirty set after checking
+            self._screen.dirty.clear()
             # Copy the buffer data to avoid holding the lock
             buffer = []
             for row in range(height):
@@ -166,7 +173,7 @@ class TerminalSession(Session):
                         "reverse": char.reverse,
                     })
                 buffer.append(row_data)
-            return (width, height, buffer)
+            return (width, height, buffer, has_changes)
 
     def update_connector(self, connector: SessionConnector) -> None:
         """Update the connector for reconnection without restarting the session."""

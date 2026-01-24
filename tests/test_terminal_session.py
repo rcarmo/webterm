@@ -130,6 +130,32 @@ class TestTerminalSession:
         assert lines[1] == "Updated Line 2"
         assert lines[2] == "Line 3"
 
+    @pytest.mark.asyncio
+    async def test_get_screen_state_returns_dirty_flag(self):
+        """Test that get_screen_state returns has_changes flag based on pyte dirty tracking."""
+        from textual_webterm.terminal_session import TerminalSession
+
+        mock_poller = MagicMock()
+        session = TerminalSession(mock_poller, "test-session", "bash")
+
+        # After creation, all rows are dirty (initialized)
+        _w, _h, _buf, has_changes = await session.get_screen_state()
+        assert has_changes is True  # Initial state marks all rows dirty
+
+        # After getting state, dirty set is cleared
+        # Without new data, has_changes should be False
+        _, _, _, has_changes = await session.get_screen_state()
+        assert has_changes is False  # No changes since last call
+
+        # Feed new data
+        await session._update_screen(b"New content\r\n")
+        _, _, _, has_changes = await session.get_screen_state()
+        assert has_changes is True  # Screen was updated
+
+        # Check again without new data
+        _, _, _, has_changes = await session.get_screen_state()
+        assert has_changes is False  # No changes
+
     def test_update_connector(self):
         """Test updating connector."""
         from textual_webterm.terminal_session import TerminalSession
