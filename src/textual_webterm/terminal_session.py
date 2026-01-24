@@ -64,9 +64,10 @@ class TerminalSession(Session):
 
     async def open(self, width: int = 80, height: int = 24) -> None:
         log.info("Opening terminal session %s with command: %s", self.session_id, self.command)
-        # Initialize pyte screen with the requested size
-        self._screen = pyte.Screen(width, height)
-        self._stream = pyte.Stream(self._screen)
+        # Initialize pyte screen with the requested size (under lock to prevent races)
+        async with self._screen_lock:
+            self._screen = pyte.Screen(width, height)
+            self._stream = pyte.Stream(self._screen)
 
         pid, master_fd = pty.fork()
         self.pid = pid
@@ -99,9 +100,10 @@ class TerminalSession(Session):
         fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, buf)
 
     async def set_terminal_size(self, width: int, height: int) -> None:
+        # First resize the PTY (blocking call in executor)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._set_terminal_size, width, height)
-        # Resize pyte screen to match
+        # Then resize pyte screen to match (after PTY resize completes)
         async with self._screen_lock:
             self._screen.resize(height, width)
 

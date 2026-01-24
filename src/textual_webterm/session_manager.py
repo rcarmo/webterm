@@ -141,11 +141,14 @@ class SessionManager:
             )
             log.info("Created app session %s", session_id)
 
-        self.sessions[session_id] = session_process
-        self.routes[route_key] = session_id
-
+        # Open the session BEFORE registering it, so it's fully initialized
+        # when other code can access it via sessions/routes dicts
         await session_process.open(*size)
         log.debug("Session %s opened and ready", session_id)
+
+        # Now register the fully initialized session
+        self.sessions[session_id] = session_process
+        self.routes[route_key] = session_id
 
         return session_process
 
