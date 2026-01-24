@@ -16,8 +16,8 @@ from pathlib import Path
 log = logging.getLogger("textual-webterm")
 
 DOCKER_SOCKET = "/var/run/docker.sock"
-STATS_HISTORY_SIZE = 30  # Number of CPU readings to keep
-POLL_INTERVAL = 2.0  # Seconds between polls
+STATS_HISTORY_SIZE = 180  # Number of CPU readings to keep (30 min at 10s interval)
+POLL_INTERVAL = 10.0  # Seconds between polls
 
 
 class DockerStatsCollector:
@@ -43,7 +43,7 @@ class DockerStatsCollector:
             return []
         return list(self._cpu_history[container_name])
 
-    async def _make_request(self, path: str) -> dict | None:
+    async def _make_request(self, path: str) -> dict | list | None:
         """Make HTTP request to Docker socket."""
         loop = asyncio.get_event_loop()
 
@@ -81,14 +81,14 @@ class DockerStatsCollector:
             else:
                 body = response_str
 
-            # Handle chunked encoding - find the JSON object
-            if body.startswith("{"):
+            # Handle chunked encoding - find the JSON object/array
+            if body.startswith("{") or body.startswith("["):
                 json_str = body
             else:
                 # Skip chunk size line in chunked encoding
                 lines = body.split("\r\n")
                 for line in lines:
-                    if line.startswith("{"):
+                    if line.startswith("{") or line.startswith("["):
                         json_str = line
                         break
                 else:
@@ -97,6 +97,44 @@ class DockerStatsCollector:
             return json.loads(json_str)
         except (json.JSONDecodeError, ValueError):
             return None
+
+    async def _discover_containers(self, service_names: list[str]) -> dict[str, str]:
+        """Map service names to container IDs by querying Docker.
+
+        Returns:
+            Dict mapping service_name -> container_id
+        """
+        # List all containers
+        containers = await self._make_request("/containers/json")
+        if not isinstance(containers, list):
+            return {}
+
+        mapping: dict[str, str] = {}
+        for container in containers:
+            if not isinstance(container, dict):
+                continue
+
+            container_id = container.get("Id", "")[:12]  # Short ID
+            names = container.get("Names", [])
+            labels = container.get("Labels", {})
+
+            # Check compose service label
+            service = labels.get("com.docker.compose.service", "")
+            if service in service_names:
+                mapping[service] = container_id
+                continue
+
+            # Fall back to container name matching
+            for name in names:
+                # Docker names start with /
+                clean_name = name.lstrip("/")
+                # Check if service name is part of container name
+                for svc in service_names:
+                    if svc in clean_name or clean_name == svc:
+                        mapping[svc] = container_id
+                        break
+
+        return mapping
 
     def _calculate_cpu_percent(
         self, container: str, cpu_stats: dict, precpu_stats: dict
@@ -139,38 +177,56 @@ class DockerStatsCollector:
         except (KeyError, TypeError, ZeroDivisionError):
             return None
 
-    async def _poll_container(self, container_name: str) -> None:
+    async def _poll_container(self, service_name: str, container_id: str) -> None:
         """Poll stats for a single container."""
-        # Docker API uses container name without leading slash
-        path = f"/containers/{container_name}/stats?stream=false"
+        path = f"/containers/{container_id}/stats?stream=false"
         stats = await self._make_request(path)
 
-        if stats is None:
+        if not isinstance(stats, dict):
             return
 
         cpu_stats = stats.get("cpu_stats", {})
         precpu_stats = stats.get("precpu_stats", {})
 
-        cpu_percent = self._calculate_cpu_percent(container_name, cpu_stats, precpu_stats)
+        cpu_percent = self._calculate_cpu_percent(service_name, cpu_stats, precpu_stats)
         if cpu_percent is not None:
-            if container_name not in self._cpu_history:
-                self._cpu_history[container_name] = deque(maxlen=STATS_HISTORY_SIZE)
-            self._cpu_history[container_name].append(cpu_percent)
+            if service_name not in self._cpu_history:
+                self._cpu_history[service_name] = deque(maxlen=STATS_HISTORY_SIZE)
+            self._cpu_history[service_name].append(cpu_percent)
 
-    async def _poll_loop(self, containers: list[str]) -> None:
+    async def _poll_loop(self, service_names: list[str]) -> None:
         """Background polling loop."""
+        # Discover container IDs on first run and periodically refresh
+        service_to_container: dict[str, str] = {}
+        refresh_counter = 0
+
         while self._running:
-            for container in containers:
+            # Refresh container mapping every 30 iterations (~60 seconds)
+            if refresh_counter % 30 == 0:
+                service_to_container = await self._discover_containers(service_names)
+                if service_to_container:
+                    log.debug(
+                        "Discovered containers: %s",
+                        ", ".join(f"{k}={v}" for k, v in service_to_container.items()),
+                    )
+
+            refresh_counter += 1
+
+            for service_name in service_names:
                 if not self._running:
                     break
+                container_id = service_to_container.get(service_name)
+                if not container_id:
+                    continue
                 try:
-                    await self._poll_container(container)
+                    await self._poll_container(service_name, container_id)
                 except Exception:
-                    log.debug("Error polling stats for %s", container)
+                    log.debug("Error polling stats for %s", service_name)
+
             await asyncio.sleep(POLL_INTERVAL)
 
-    def start(self, containers: list[str]) -> None:
-        """Start collecting stats for given containers."""
+    def start(self, service_names: list[str]) -> None:
+        """Start collecting stats for given service names."""
         if not self.available:
             log.debug("Docker socket not available at %s", self._socket_path)
             return
@@ -179,8 +235,8 @@ class DockerStatsCollector:
             return
 
         self._running = True
-        self._task = asyncio.create_task(self._poll_loop(containers))
-        log.info("Started Docker stats collection for %d containers", len(containers))
+        self._task = asyncio.create_task(self._poll_loop(service_names))
+        log.info("Started Docker stats collection for %d services", len(service_names))
 
     async def stop(self) -> None:
         """Stop collecting stats."""

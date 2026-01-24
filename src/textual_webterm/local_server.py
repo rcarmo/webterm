@@ -788,7 +788,7 @@ class LocalServer:
         function startRefresh() {{
             if (refreshTimer !== null) return;
             refresh();
-            refreshTimer = setInterval(refresh, 15000);
+            refreshTimer = setInterval(refresh, 5000);
         }}
         function stopRefresh() {{
             if (refreshTimer === null) return;
