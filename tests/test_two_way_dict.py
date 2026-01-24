@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from textual_webterm._two_way_dict import TwoWayDict
 
 
@@ -69,3 +71,19 @@ class TestTwoWayDict:
         d: TwoWayDict[str, int] = TwoWayDict({"a": 1, "b": 2})
         assert d.get("a") == 1
         assert d.get_key(2) == "b"
+
+    def test_reassign_key_removes_old_reverse(self) -> None:
+        """Test reassigning a key removes the old reverse mapping."""
+        d: TwoWayDict[str, int] = TwoWayDict()
+        d["a"] = 1
+        d["a"] = 2  # Reassign key "a" to value 2
+        assert d.get("a") == 2
+        assert d.get_key(2) == "a"
+        assert d.get_key(1) is None  # Old value should be unmapped
+
+    def test_duplicate_value_raises(self) -> None:
+        """Test that assigning duplicate value to different key raises."""
+        d: TwoWayDict[str, int] = TwoWayDict()
+        d["a"] = 1
+        with pytest.raises(ValueError, match="already mapped"):
+            d["b"] = 1  # Same value, different key
