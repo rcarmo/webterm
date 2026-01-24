@@ -164,226 +164,81 @@ def render_terminal_svg(
     # Text content group
     parts.append('<g class="terminal-text">')
 
-    # Render each row
+    # Render each row - use explicit x position for EACH character
+    # to ensure pixel-perfect alignment regardless of font metrics
     for row_idx, row_data in enumerate(screen_buffer):
         # With dominant-baseline: text-before-edge, text top aligns to y
         y = 10 + row_idx * actual_line_height
 
-        # Build spans for this row, grouping consecutive chars with same style
-        spans = _build_row_spans(row_data, foreground, background)
-
-        if not spans:
+        if not row_data:
             continue
 
-        # Start text element for this row
-        # First collect all background rects, then the text element
+        # Collect background rects and text spans
         row_bg_rects: list[str] = []
+        row_tspans: list[str] = []
 
-        x = 10.0  # Starting x position with padding
-        for span in spans:
-            columns = span["columns"]
+        # Track current style for potential span merging (only merge if same style AND adjacent)
+        col = 0
+        while col < len(row_data):
+            char = row_data[col]
+            char_data = char["data"]
 
-            # Background needs a separate rect (collected before text)
-            if span["has_bg"] and span["bg"] != background:
-                bg_width = columns * char_width
+            # Skip empty placeholder cells (after wide characters)
+            if not char_data:
+                col += 1
+                continue
+
+            x = 10.0 + col * char_width
+
+            # Get colors, handling reverse video
+            fg = _color_to_hex(char["fg"], is_foreground=True)
+            bg = _color_to_hex(char["bg"], is_foreground=False)
+            if char["reverse"]:
+                fg, bg = bg, fg
+
+            # Count columns for this character (wide chars take 2)
+            char_cols = 1
+            if col + 1 < len(row_data) and not row_data[col + 1]["data"]:
+                char_cols = 2  # Wide character
+
+            # Background rect if not default
+            if bg != background:
+                bg_width = char_cols * char_width
                 row_bg_rects.append(
                     f'<rect x="{x:.1f}" y="{y:.1f}" '
                     f'width="{bg_width:.1f}" height="{actual_line_height:.1f}" '
-                    f'fill="{span["bg"]}"/>'
+                    f'fill="{bg}"/>'
                 )
-            x += columns * char_width
 
-        # Add background rects first
-        parts.extend(row_bg_rects)
-
-        # Now add the text element
-        parts.append(f'<text y="{y:.1f}">')
-
-        x = 10.0  # Reset x position for text rendering
-        for span in spans:
-            text = span["text"]
-            columns = span["columns"]
-
-            # Build tspan attributes
+            # Build tspan with explicit x position
             attrs = [f'x="{x:.1f}"']
 
-            # Foreground color
-            if span["fg"] != foreground:
-                attrs.append(f'fill="{span["fg"]}"')
+            if fg != foreground:
+                attrs.append(f'fill="{fg}"')
 
-            # Style classes
             classes = []
-            if span["bold"]:
+            if char["bold"]:
                 classes.append("bold")
-            if span["italic"]:
+            if char["italics"]:
                 classes.append("italic")
-            if span["underline"]:
+            if char["underscore"]:
                 classes.append("underline")
             if classes:
                 attrs.append(f'class="{" ".join(classes)}"')
 
-            # Note: textLength with lengthAdjust="spacing" was tried but causes
-            # visual positioning issues. The browser adds spacing between chars
-            # which shifts subsequent text visually even though x coords are correct.
-            # Accepting slight gaps in horizontal lines is preferable to cursor misalignment.
+            row_tspans.append(f'<tspan {" ".join(attrs)}>{_escape_xml(char_data)}</tspan>')
 
-            parts.append(f'<tspan {" ".join(attrs)}>{_escape_xml(text)}</tspan>')
-            x += columns * char_width
+            col += char_cols
 
-        parts.append("</text>")
+        # Add background rects first, then text
+        if row_bg_rects or row_tspans:
+            parts.extend(row_bg_rects)
+            if row_tspans:
+                parts.append(f'<text y="{y:.1f}">')
+                parts.extend(row_tspans)
+                parts.append("</text>")
 
     parts.append("</g>")
     parts.append("</svg>")
 
     return "".join(parts)
-
-
-class _Span(TypedDict):
-    """A span of text with consistent styling."""
-
-    text: str
-    columns: int  # Number of terminal columns this span occupies
-    fg: str
-    bg: str
-    bold: bool
-    italic: bool
-    underline: bool
-    has_bg: bool
-
-
-def _is_box_drawing_vertical_or_corner(char: str) -> bool:
-    """Check if character is a vertical box-drawing or corner that needs precise positioning.
-
-    Horizontal lines (─━═) can merge since they form continuous lines.
-    Vertical lines (│┃║) and corners/junctions need separate positioning.
-    """
-    if not char:
-        return False
-    code = ord(char[0])
-    # Not in box drawing range at all
-    if not (0x2500 <= code <= 0x257F):
-        return False
-    # Horizontal lines can merge: ─ ━ ═ (and their variants)
-    # U+2500-U+2501: ─ ━
-    # U+2504-U+250B: ┄ ┅ ┆ ┇ ┈ ┉ ┊ ┋ (dashed, but ┆┇┊┋ are vertical)
-    # U+254C-U+254F: ╌ ╍ ╎ ╏ (dashed)
-    # U+2550: ═
-    horizontal_chars = {
-        0x2500, 0x2501,  # ─ ━
-        0x2504, 0x2505,  # ┄ ┅ (horizontal dashed)
-        0x2508, 0x2509,  # ┈ ┉ (horizontal dashed)
-        0x254C, 0x254D,  # ╌ ╍ (horizontal dashed)
-        0x2550,          # ═
-        0x2574, 0x2576, 0x2578, 0x257A, 0x257C, 0x257E,  # partial horizontal
-    }
-    return code not in horizontal_chars
-
-
-# Set of horizontal box-drawing character codes for span detection
-_HORIZONTAL_BOX_CHARS = {
-    0x2500, 0x2501,  # ─ ━
-    0x2504, 0x2505,  # ┄ ┅ (horizontal dashed)
-    0x2508, 0x2509,  # ┈ ┉ (horizontal dashed)
-    0x254C, 0x254D,  # ╌ ╍ (horizontal dashed)
-    0x2550,          # ═
-}
-
-
-def _is_mostly_horizontal_box_drawing(text: str, threshold: float = 0.8) -> bool:
-    """Check if text is mostly horizontal box-drawing characters.
-
-    Returns True if at least threshold (default 80%) of chars are horizontal
-    box-drawing chars. This handles cases where terminal data has occasional
-    corrupted chars (like replacement char U+FFFD) mixed in.
-    """
-    if not text:
-        return False
-    horizontal_count = sum(1 for c in text if ord(c) in _HORIZONTAL_BOX_CHARS)
-    return horizontal_count / len(text) >= threshold
-
-
-def _should_break_span(current_text: str, new_char: str) -> bool:
-    """Check if we should break the span before adding new_char.
-
-    Vertical box-drawing and corners should not merge with other chars.
-    Horizontal box-drawing can merge with same horizontal chars.
-    """
-    if not current_text:
-        return False
-
-    last_char = current_text[-1]
-    curr_needs_break = _is_box_drawing_vertical_or_corner(last_char)
-    new_needs_break = _is_box_drawing_vertical_or_corner(new_char)
-
-    # If either char needs precise positioning, break
-    return curr_needs_break or new_needs_break
-
-
-def _build_row_spans(
-    row_data: list[CharData],
-    default_fg: str,
-    default_bg: str,
-) -> list[_Span]:
-    """Build styled spans from row data, merging consecutive chars with same style."""
-    if not row_data:
-        return []
-
-    spans: list[_Span] = []
-    current_span: _Span | None = None
-
-    for char in row_data:
-        char_data = char["data"]
-
-        # Empty placeholder cells (after wide characters) count as a column
-        # but don't add text
-        if not char_data:
-            if current_span is not None:
-                current_span["columns"] += 1
-            continue
-
-        # Get colors, handling reverse video
-        fg = _color_to_hex(char["fg"], is_foreground=True)
-        bg = _color_to_hex(char["bg"], is_foreground=False)
-
-        if char["reverse"]:
-            fg, bg = bg, fg
-
-        has_bg = bg != default_bg
-
-        # Check if we should break the span (for box-drawing character boundaries)
-        should_break = current_span is not None and _should_break_span(
-            current_span["text"], char_data
-        )
-
-        # Check if we can extend current span
-        if (
-            current_span is not None
-            and not should_break
-            and current_span["fg"] == fg
-            and current_span["bg"] == bg
-            and current_span["bold"] == char["bold"]
-            and current_span["italic"] == char["italics"]
-            and current_span["underline"] == char["underscore"]
-            and current_span["has_bg"] == has_bg
-        ):
-            current_span["text"] += char_data
-            current_span["columns"] += 1
-        else:
-            # Start new span
-            if current_span is not None:
-                spans.append(current_span)
-            current_span = {
-                "text": char_data,
-                "columns": 1,
-                "fg": fg,
-                "bg": bg,
-                "bold": char["bold"],
-                "italic": char["italics"],
-                "underline": char["underscore"],
-                "has_bg": has_bg,
-            }
-
-    if current_span is not None:
-        spans.append(current_span)
-
-    return spans

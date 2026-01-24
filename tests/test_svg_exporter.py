@@ -7,12 +7,8 @@ from textual_webterm.svg_exporter import (
     DEFAULT_BG,
     DEFAULT_FG,
     CharData,
-    _build_row_spans,
     _color_to_hex,
     _escape_xml,
-    _is_box_drawing_vertical_or_corner,
-    _is_mostly_horizontal_box_drawing,
-    _should_break_span,
     render_terminal_svg,
 )
 
@@ -118,306 +114,6 @@ class TestEscapeXml:
         assert _escape_xml("🎉🚀") == "🎉🚀"
 
 
-class TestBuildRowSpans:
-    """Tests for _build_row_spans function."""
-
-    def _char(
-        self,
-        data: str,
-        fg: str = "default",
-        bg: str = "default",
-        bold: bool = False,
-        italics: bool = False,
-        underscore: bool = False,
-        reverse: bool = False,
-    ) -> CharData:
-        """Helper to create CharData."""
-        return {
-            "data": data,
-            "fg": fg,
-            "bg": bg,
-            "bold": bold,
-            "italics": italics,
-            "underscore": underscore,
-            "reverse": reverse,
-        }
-
-    def test_empty_row(self) -> None:
-        """Empty row returns no spans."""
-        assert _build_row_spans([], DEFAULT_FG, DEFAULT_BG) == []
-
-    def test_single_char(self) -> None:
-        """Single character produces one span."""
-        row = [self._char("A")]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 1
-        assert spans[0]["text"] == "A"
-
-    def test_consecutive_same_style_merged(self) -> None:
-        """Consecutive chars with same style are merged."""
-        row = [self._char("H"), self._char("e"), self._char("l"), self._char("l"), self._char("o")]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 1
-        assert spans[0]["text"] == "Hello"
-
-    def test_different_colors_split(self) -> None:
-        """Different colors create separate spans."""
-        row = [
-            self._char("R", fg="red"),
-            self._char("G", fg="green"),
-            self._char("B", fg="blue"),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 3
-        assert spans[0]["text"] == "R"
-        assert spans[0]["fg"] == ANSI_COLORS["red"]
-        assert spans[1]["text"] == "G"
-        assert spans[1]["fg"] == ANSI_COLORS["green"]
-        assert spans[2]["text"] == "B"
-        assert spans[2]["fg"] == ANSI_COLORS["blue"]
-
-    def test_same_color_merged(self) -> None:
-        """Same color chars are merged."""
-        row = [
-            self._char("A", fg="red"),
-            self._char("B", fg="red"),
-            self._char("C", fg="red"),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 1
-        assert spans[0]["text"] == "ABC"
-        assert spans[0]["fg"] == ANSI_COLORS["red"]
-
-    def test_bold_creates_new_span(self) -> None:
-        """Bold attribute creates new span."""
-        row = [
-            self._char("N"),
-            self._char("B", bold=True),
-            self._char("N"),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 3
-        assert spans[0]["bold"] is False
-        assert spans[1]["bold"] is True
-        assert spans[1]["text"] == "B"
-        assert spans[2]["bold"] is False
-
-    def test_italic_creates_new_span(self) -> None:
-        """Italic attribute creates new span."""
-        row = [
-            self._char("N"),
-            self._char("I", italics=True),
-            self._char("N"),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 3
-        assert spans[1]["italic"] is True
-
-    def test_underline_creates_new_span(self) -> None:
-        """Underline attribute creates new span."""
-        row = [
-            self._char("N"),
-            self._char("U", underscore=True),
-            self._char("N"),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 3
-        assert spans[1]["underline"] is True
-
-    def test_reverse_swaps_colors(self) -> None:
-        """Reverse video swaps foreground and background."""
-        row = [self._char("R", fg="red", bg="blue", reverse=True)]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 1
-        # Colors should be swapped
-        assert spans[0]["fg"] == ANSI_COLORS["blue"]
-        assert spans[0]["bg"] == ANSI_COLORS["red"]
-
-    def test_background_color_tracked(self) -> None:
-        """Background color is tracked in has_bg flag."""
-        row = [
-            self._char("N"),
-            self._char("B", bg="red"),
-            self._char("N"),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert spans[0]["has_bg"] is False
-        assert spans[1]["has_bg"] is True
-        assert spans[2]["has_bg"] is False
-
-    def test_wide_char_placeholder_skipped(self) -> None:
-        """Empty placeholder cells (after wide chars) are skipped but counted in columns."""
-        row = [
-            self._char("A"),
-            self._char("中"),  # Wide char
-            self._char(""),  # Placeholder - should be skipped but counted
-            self._char("B"),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        # Should merge into single span since all default style
-        assert len(spans) == 1
-        assert spans[0]["text"] == "A中B"
-        assert spans[0]["columns"] == 4  # 1 + 1 + 1(placeholder) + 1
-
-    def test_multiple_wide_chars(self) -> None:
-        """Multiple wide characters handled correctly."""
-        row = [
-            self._char("日"),
-            self._char(""),
-            self._char("本"),
-            self._char(""),
-            self._char("語"),
-            self._char(""),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 1
-        assert spans[0]["text"] == "日本語"
-        assert spans[0]["columns"] == 6  # Each wide char + placeholder = 2 columns
-
-    def test_emoji_with_placeholder(self) -> None:
-        """Emoji characters with placeholders handled."""
-        row = [
-            self._char("🎉"),
-            self._char(""),
-            self._char(" "),
-            self._char("🚀"),
-            self._char(""),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 1
-        assert spans[0]["text"] == "🎉 🚀"
-        assert spans[0]["columns"] == 5  # 2 + 1 + 2
-
-    def test_mixed_styles_complex(self) -> None:
-        """Complex mix of styles produces correct spans."""
-        row = [
-            self._char("H", fg="red", bold=True),
-            self._char("e", fg="red", bold=True),
-            self._char("l", fg="green"),
-            self._char("l", fg="green"),
-            self._char("o", fg="blue", italics=True),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 3
-        assert spans[0]["text"] == "He"
-        assert spans[0]["bold"] is True
-        assert spans[1]["text"] == "ll"
-        assert spans[1]["bold"] is False
-        assert spans[2]["text"] == "o"
-        assert spans[2]["italic"] is True
-
-    def test_placeholder_at_start_ignored(self) -> None:
-        """Empty placeholder at start of row is ignored."""
-        row = [
-            self._char(""),  # Orphan placeholder at start
-            self._char("A"),
-            self._char("B"),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 1
-        assert spans[0]["text"] == "AB"
-        assert spans[0]["columns"] == 2  # Placeholder not counted (no prior span)
-
-    def test_style_change_after_wide_char(self) -> None:
-        """Style change right after a wide character placeholder works."""
-        row = [
-            self._char("中", fg="red"),
-            self._char(""),  # Placeholder
-            self._char("A", fg="blue"),
-        ]
-        spans = _build_row_spans(row, DEFAULT_FG, DEFAULT_BG)
-        assert len(spans) == 2
-        assert spans[0]["text"] == "中"
-        assert spans[0]["columns"] == 2  # Wide char + placeholder
-        assert spans[1]["text"] == "A"
-        assert spans[1]["columns"] == 1
-
-
-class TestBoxDrawingHelpers:
-    """Tests for box drawing character detection helpers."""
-
-    def test_is_box_drawing_empty_char(self) -> None:
-        """Empty string returns False."""
-        assert _is_box_drawing_vertical_or_corner("") is False
-
-    def test_is_box_drawing_regular_char(self) -> None:
-        """Regular ASCII characters return False."""
-        assert _is_box_drawing_vertical_or_corner("A") is False
-        assert _is_box_drawing_vertical_or_corner(" ") is False
-        assert _is_box_drawing_vertical_or_corner("1") is False
-
-    def test_is_box_drawing_horizontal_lines(self) -> None:
-        """Horizontal box drawing lines return False (can merge)."""
-        assert _is_box_drawing_vertical_or_corner("─") is False  # U+2500
-        assert _is_box_drawing_vertical_or_corner("━") is False  # U+2501
-        assert _is_box_drawing_vertical_or_corner("═") is False  # U+2550
-
-    def test_is_box_drawing_vertical_lines(self) -> None:
-        """Vertical box drawing lines return True (need precise positioning)."""
-        assert _is_box_drawing_vertical_or_corner("│") is True  # U+2502
-        assert _is_box_drawing_vertical_or_corner("┃") is True  # U+2503
-        assert _is_box_drawing_vertical_or_corner("║") is True  # U+2551
-
-    def test_is_box_drawing_corners(self) -> None:
-        """Corner box drawing characters return True."""
-        assert _is_box_drawing_vertical_or_corner("┌") is True
-        assert _is_box_drawing_vertical_or_corner("┐") is True
-        assert _is_box_drawing_vertical_or_corner("└") is True
-        assert _is_box_drawing_vertical_or_corner("┘") is True
-        assert _is_box_drawing_vertical_or_corner("╭") is True
-        assert _is_box_drawing_vertical_or_corner("╮") is True
-        assert _is_box_drawing_vertical_or_corner("╯") is True
-        assert _is_box_drawing_vertical_or_corner("╰") is True
-
-    def test_should_break_span_empty_current(self) -> None:
-        """Empty current text never breaks."""
-        assert _should_break_span("", "A") is False
-        assert _should_break_span("", "│") is False
-
-    def test_should_break_span_normal_chars(self) -> None:
-        """Normal characters don't break spans."""
-        assert _should_break_span("A", "B") is False
-        assert _should_break_span("Hello", "!") is False
-
-    def test_should_break_span_vertical_line(self) -> None:
-        """Vertical lines cause breaks."""
-        assert _should_break_span("A", "│") is True
-        assert _should_break_span("│", "A") is True
-
-    def test_should_break_span_horizontal_lines_merge(self) -> None:
-        """Horizontal lines can merge with each other."""
-        assert _should_break_span("─", "─") is False
-        assert _should_break_span("━", "━") is False
-
-    def test_is_mostly_horizontal_box_drawing_empty(self) -> None:
-        """Empty string returns False."""
-        assert _is_mostly_horizontal_box_drawing("") is False
-
-    def test_is_mostly_horizontal_box_drawing_normal_text(self) -> None:
-        """Normal text returns False."""
-        assert _is_mostly_horizontal_box_drawing("Hello") is False
-        assert _is_mostly_horizontal_box_drawing("ABC") is False
-
-    def test_is_mostly_horizontal_box_drawing_horizontal_lines(self) -> None:
-        """Horizontal box chars return True."""
-        assert _is_mostly_horizontal_box_drawing("─") is True
-        assert _is_mostly_horizontal_box_drawing("───") is True
-        assert _is_mostly_horizontal_box_drawing("━━━") is True
-        assert _is_mostly_horizontal_box_drawing("═══") is True
-
-    def test_is_mostly_horizontal_box_drawing_with_corruption(self) -> None:
-        """Mostly horizontal with some corrupted chars returns True."""
-        # 90% horizontal (9 out of 10)
-        assert _is_mostly_horizontal_box_drawing("─────────X") is True
-        # With replacement chars (like U+FFFD)
-        assert _is_mostly_horizontal_box_drawing("───\ufffd───") is True
-
-    def test_is_mostly_horizontal_box_drawing_mixed(self) -> None:
-        """Mixed content below threshold returns False."""
-        assert _is_mostly_horizontal_box_drawing("─A─") is False  # 66% horizontal
-        assert _is_mostly_horizontal_box_drawing("│──") is False  # vertical at start
-
-
 class TestRenderTerminalSvg:
     """Tests for render_terminal_svg function."""
 
@@ -480,19 +176,34 @@ class TestRenderTerminalSvg:
         # Should only have 1 text element with content (for "A")
         assert svg.count("<tspan") == 1
 
+    def test_buffer_with_truly_empty_row(self) -> None:
+        """Buffer with truly empty row (empty list) is handled."""
+        buffer = [
+            [],  # Truly empty row (no cells at all)
+            [self._char("B")],  # Normal row
+        ]
+        svg = render_terminal_svg(buffer, width=10, height=2)
+        assert svg.startswith("<svg")
+        assert ">B</tspan>" in svg
+
     def test_basic_text_output(self) -> None:
-        """Basic text is included in SVG."""
+        """Basic text is included in SVG (each char with explicit x position)."""
         buffer = self._make_buffer(["Hello, World!"])
         svg = render_terminal_svg(buffer, width=80, height=24)
-        assert "Hello, World!" in svg
+        # Each character is rendered individually with explicit x
+        assert ">H</tspan>" in svg
+        assert ">e</tspan>" in svg
+        assert ">!</tspan>" in svg
 
     def test_multiline_output(self) -> None:
         """Multiple lines render correctly."""
         buffer = self._make_buffer(["Line 1", "Line 2", "Line 3"])
         svg = render_terminal_svg(buffer, width=80, height=24)
-        assert "Line 1" in svg
-        assert "Line 2" in svg
-        assert "Line 3" in svg
+        # Check for characters from each line
+        assert ">L</tspan>" in svg
+        assert ">1</tspan>" in svg
+        assert ">2</tspan>" in svg
+        assert ">3</tspan>" in svg
         # Should have 3 text elements
         assert svg.count("<text y=") == 3
 
@@ -500,8 +211,9 @@ class TestRenderTerminalSvg:
         """Special XML characters are properly escaped."""
         buffer = self._make_buffer(["<script>&test</script>"])
         svg = render_terminal_svg(buffer, width=80, height=24)
-        assert "&lt;script&gt;" in svg
-        assert "&amp;test" in svg
+        assert "&lt;" in svg  # < escaped
+        assert "&gt;" in svg  # > escaped
+        assert "&amp;" in svg  # & escaped
         assert "<script>" not in svg  # Should not appear unescaped
 
     def test_colored_text(self) -> None:
@@ -622,13 +334,17 @@ class TestRenderTerminalSvg:
         """Unicode text is preserved."""
         buffer = self._make_buffer(["你好世界"])
         svg = render_terminal_svg(buffer, width=80, height=24)
-        assert "你好世界" in svg
+        # Each char rendered separately
+        assert ">你</tspan>" in svg
+        assert ">好</tspan>" in svg
 
     def test_emoji_text(self) -> None:
         """Emoji are preserved."""
         buffer = self._make_buffer(["🎉🚀✨"])
         svg = render_terminal_svg(buffer, width=80, height=24)
-        assert "🎉🚀✨" in svg
+        # Each emoji rendered separately
+        assert ">🎉</tspan>" in svg
+        assert ">🚀</tspan>" in svg
 
     def test_wide_char_with_placeholder(self) -> None:
         """Wide chars with placeholders render correctly."""
@@ -641,7 +357,12 @@ class TestRenderTerminalSvg:
             ]
         ]
         svg = render_terminal_svg(buffer, width=80, height=24)
-        assert "A中B" in svg
+        # Each char rendered with explicit x position
+        assert ">A</tspan>" in svg
+        assert ">中</tspan>" in svg
+        assert ">B</tspan>" in svg
+        # B should be at column 3 (A=0, 中=1-2, B=3)
+        assert 'x="34.0"' in svg  # 10 + 3*8 = 34
 
     def test_viewbox_dimensions(self) -> None:
         """ViewBox matches calculated dimensions."""
@@ -814,7 +535,12 @@ class TestEdgeCases:
             ]
         ]
         svg = render_terminal_svg(buffer, width=7, height=1)
-        assert "A中B🎉C" in svg
+        # Each char rendered with explicit x
+        assert ">A</tspan>" in svg
+        assert ">中</tspan>" in svg
+        assert ">B</tspan>" in svg
+        assert ">🎉</tspan>" in svg
+        assert ">C</tspan>" in svg
 
     def test_special_unicode_blocks(self) -> None:
         """Unicode box drawing characters render (separately for precise positioning)."""
