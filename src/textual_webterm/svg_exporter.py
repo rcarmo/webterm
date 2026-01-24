@@ -207,11 +207,12 @@ def render_terminal_svg(
                 char_cols = 2  # Wide character
 
             # Background rect if not default
+            # Add 0.5px overlap in both directions to eliminate sub-pixel gaps at high zoom
             if bg != background:
-                bg_width = char_cols * char_width
+                bg_width = char_cols * char_width + 0.5
                 row_bg_rects.append(
                     f'<rect x="{x:.1f}" y="{rect_y:.1f}" '
-                    f'width="{bg_width:.1f}" height="{actual_line_height:.1f}" '
+                    f'width="{bg_width:.1f}" height="{actual_line_height + 0.5:.1f}" '
                     f'fill="{bg}"/>'
                 )
 

@@ -300,15 +300,15 @@ class TestRenderTerminalSvg:
             self._char("", bg="red"),  # Placeholder inherits bg
         ]]
         svg = render_terminal_svg(buffer, width=80, height=24, char_width=10.0)
-        # Background should span 2 columns (20px width)
+        # Background should span 2 columns (20px width + 0.5px overlap)
         assert f'fill="{ANSI_COLORS["red"]}"' in svg
-        # Verify rect width is for 2 columns
+        # Verify rect width is for 2 columns plus overlap
         import re
         rect_match = re.search(r'<rect[^>]*width="(\d+\.?\d*)"[^>]*fill="{}"/>'
                               .format(ANSI_COLORS["red"]), svg)
         assert rect_match is not None
         width = float(rect_match.group(1))
-        assert width == 20.0  # 2 columns * 10.0 char_width
+        assert width == 20.5  # 2 columns * 10.0 char_width + 0.5 overlap
 
     def test_background_same_as_terminal_bg_no_rect(self) -> None:
         """Background same as terminal background doesn't create extra rect."""
