@@ -461,14 +461,31 @@ class LocalServer:
         if route_key is None:
             raise web.HTTPNotFound(text="No running session")
 
+        # Parse requested dimensions (used when creating new sessions)
+        try:
+            req_width = int(request.query.get("width", str(DISCONNECT_RESIZE[0])))
+        except ValueError:
+            req_width = DISCONNECT_RESIZE[0]
+        req_width = max(10, min(400, req_width))
+
+        try:
+            req_height = int(request.query.get("height", str(DISCONNECT_RESIZE[1])))
+        except ValueError:
+            req_height = DISCONNECT_RESIZE[1]
+        req_height = max(5, min(200, req_height))
+
         session_process = self.session_manager.get_session_by_route_key(RouteKey(route_key))
         if session_process is None and route_key in self.session_manager.apps_by_slug:
+            # Create session with requested dimensions
             await self._create_terminal_session(
                 route_key,
-                width=DISCONNECT_RESIZE[0],
-                height=DISCONNECT_RESIZE[1],
+                width=req_width,
+                height=req_height,
             )
             session_process = self.session_manager.get_session_by_route_key(RouteKey(route_key))
+            # Give the session a moment to start and produce initial output
+            if session_process is not None:
+                await asyncio.sleep(0.5)
 
         if session_process is None or not hasattr(session_process, "get_screen_state"):
             raise web.HTTPNotFound(text="Session not found")
