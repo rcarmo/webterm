@@ -445,6 +445,78 @@ class TestRenderTerminalSvg:
         # Should have a rect for background
         assert "<rect" in svg
 
+    def test_background_color_rect_dimensions(self) -> None:
+        """Background rect has correct position and dimensions."""
+        buffer = [[self._char("A"), self._char("B", bg="green"), self._char("C")]]
+        svg = render_terminal_svg(buffer, width=80, height=24, char_width=10.0)
+        # Background rect should be positioned after 'A' (x=10 padding + 10 char width = 20)
+        assert f'fill="{ANSI_COLORS["green"]}"' in svg
+        # Check rect exists with green fill
+        import re
+        rect_match = re.search(r'<rect[^>]*fill="{}"[^>]*/>'.format(ANSI_COLORS["green"]), svg)
+        assert rect_match is not None
+
+    def test_background_color_hex_format(self) -> None:
+        """Background color works with hex format (with and without #)."""
+        buffer = [[self._char("X", bg="#ff5733")]]
+        svg = render_terminal_svg(buffer, width=80, height=24)
+        assert 'fill="#ff5733"' in svg
+
+    def test_background_color_hex_without_hash(self) -> None:
+        """Background color works with pyte 256-color format (no # prefix)."""
+        buffer = [[self._char("X", bg="00ff00")]]
+        svg = render_terminal_svg(buffer, width=80, height=24)
+        assert 'fill="#00ff00"' in svg
+
+    def test_background_color_multiple_spans(self) -> None:
+        """Multiple background colors in same row render correctly."""
+        buffer = [[
+            self._char("R", bg="red"),
+            self._char("G", bg="green"),
+            self._char("B", bg="blue"),
+        ]]
+        svg = render_terminal_svg(buffer, width=80, height=24)
+        assert f'fill="{ANSI_COLORS["red"]}"' in svg
+        assert f'fill="{ANSI_COLORS["green"]}"' in svg
+        assert f'fill="{ANSI_COLORS["blue"]}"' in svg
+        # Should have 3 background rects (plus terminal bg rect)
+        assert svg.count("<rect") >= 4
+
+    def test_background_color_wide_char(self) -> None:
+        """Background color on wide character spans correct width."""
+        buffer = [[
+            self._char("中", bg="red"),
+            self._char("", bg="red"),  # Placeholder inherits bg
+        ]]
+        svg = render_terminal_svg(buffer, width=80, height=24, char_width=10.0)
+        # Background should span 2 columns (20px width)
+        assert f'fill="{ANSI_COLORS["red"]}"' in svg
+        # Verify rect width is for 2 columns
+        import re
+        rect_match = re.search(r'<rect[^>]*width="(\d+\.?\d*)"[^>]*fill="{}"/>'
+                              .format(ANSI_COLORS["red"]), svg)
+        assert rect_match is not None
+        width = float(rect_match.group(1))
+        assert width == 20.0  # 2 columns * 10.0 char_width
+
+    def test_background_same_as_terminal_bg_no_rect(self) -> None:
+        """Background same as terminal background doesn't create extra rect."""
+        # Use default terminal background (#000000)
+        buffer = [[self._char("X", bg="#000000")]]
+        svg = render_terminal_svg(buffer, width=80, height=24, background="#000000")
+        # Should only have terminal background rect, not character background
+        # Count rects - should be just 1 (terminal bg)
+        assert svg.count("<rect") == 1
+
+    def test_background_and_foreground_colors(self) -> None:
+        """Both background and foreground colors render correctly."""
+        buffer = [[self._char("X", fg="yellow", bg="blue")]]
+        svg = render_terminal_svg(buffer, width=80, height=24)
+        # Background rect with blue
+        assert f'fill="{ANSI_COLORS["blue"]}"' in svg
+        # Text tspan with yellow
+        assert f'fill="{ANSI_COLORS["yellow"]}"' in svg
+
     def test_unicode_text(self) -> None:
         """Unicode text is preserved."""
         buffer = self._make_buffer(["你好世界"])
