@@ -2,6 +2,20 @@
 
 This document outlines the plan for bundling xterm.js 6.0 directly, replacing the dependency on textual-serve's bundled `textual.js`.
 
+## Status: ✅ Complete
+
+The migration has been implemented on the `upstream-xterm` branch.
+
+**Key changes:**
+- Removed `textual-serve` dependency
+- Added `@xterm/xterm` 6.0 with all addons
+- Created `terminal.ts` client with full WebSocket protocol support
+- Pre-built `terminal.js` bundle committed to repo (no Bun required for users)
+- Scrollback history now works (default 1000 lines, configurable)
+- Custom font family configured directly (no monkey-patch workarounds)
+
+---
+
 ## Current State Analysis
 
 ### What textual-serve Provides
