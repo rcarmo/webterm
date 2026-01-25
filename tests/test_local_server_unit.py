@@ -13,30 +13,27 @@ from textual_webterm.local_server import (
 
 
 class TestGetStaticPath:
-    """Tests for static path function."""
+    """Tests for static path."""
 
     def test_static_path_exists(self):
         """Test that static path exists."""
-        from textual_webterm.local_server import _get_static_path
+        from textual_webterm.local_server import WEBTERM_STATIC_PATH
 
-        path = _get_static_path()
-        assert path is not None and path.exists()
+        assert WEBTERM_STATIC_PATH is not None and WEBTERM_STATIC_PATH.exists()
 
     def test_static_path_has_js(self):
         """Test that static path has JS directory."""
-        from textual_webterm.local_server import _get_static_path
+        from textual_webterm.local_server import WEBTERM_STATIC_PATH
 
-        path = _get_static_path()
-        assert path is not None
-        assert (path / "js").exists()
+        assert WEBTERM_STATIC_PATH is not None
+        assert (WEBTERM_STATIC_PATH / "js").exists()
 
     def test_static_path_has_css(self):
         """Test that static path has CSS directory."""
-        from textual_webterm.local_server import _get_static_path
+        from textual_webterm.local_server import WEBTERM_STATIC_PATH
 
-        path = _get_static_path()
-        assert path is not None
-        assert (path / "css").exists()
+        assert WEBTERM_STATIC_PATH is not None
+        assert (WEBTERM_STATIC_PATH / "css").exists()
 
 
 class TestLocalServer:
@@ -421,21 +418,6 @@ class TestLocalServerMoreCoverage:
         server_with_no_apps.force_exit()
         assert server_with_no_apps.exit_event.is_set()
 
-    def test_get_static_path_import_error_returns_none(self, monkeypatch):
-        import builtins
-
-        from textual_webterm.local_server import _get_static_path
-
-        real_import = builtins.__import__
-
-        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "textual_serve":
-                raise ImportError("nope")
-            return real_import(name, globals, locals, fromlist, level)
-
-        monkeypatch.setattr(builtins, "__import__", fake_import)
-        assert _get_static_path() is None
-
     def test_add_terminal_windows_noop(self, server_with_no_apps, monkeypatch):
         from textual_webterm import constants as constants_mod
 
@@ -483,9 +465,11 @@ class TestLocalServerMoreCoverage:
 
         resp = await server_with_no_apps._handle_root(request)
         assert "/static/css/xterm.css" in resp.text
-        assert "/static-webterm/monospace.css" in resp.text
+        assert "/static/monospace.css" in resp.text
+        assert "/static/js/terminal.js" in resp.text
         assert "data-session-websocket-url" in resp.text
         assert "data-font-size" in resp.text
+        assert "data-scrollback" in resp.text
         assert "<title>Known</title>" in resp.text
 
     @pytest.mark.asyncio
@@ -677,7 +661,7 @@ class TestLocalServerMoreCoverage:
         fake_path = MagicMock()
         fake_path.exists.return_value = False
 
-        monkeypatch.setattr(local_server, "STATIC_PATH", fake_path)
+        monkeypatch.setattr(local_server, "WEBTERM_STATIC_PATH", fake_path)
         monkeypatch.setattr(local_server.log, "error", MagicMock())
 
         server_with_no_apps._build_routes()

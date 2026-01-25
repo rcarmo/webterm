@@ -129,3 +129,10 @@ dmypy.json
 
 # textual-webterm specific
 textual.log
+
+# Node.js / Bun
+node_modules/
+bun.lockb
+
+# Built JS bundle (regenerate with: bun run build)
+src/textual_webterm/static/js/terminal.js

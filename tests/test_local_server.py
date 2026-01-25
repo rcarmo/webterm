@@ -3,22 +3,22 @@
 from __future__ import annotations
 
 from textual_webterm.config import App, Config
-from textual_webterm.local_server import STATIC_PATH, LocalServer
+from textual_webterm.local_server import WEBTERM_STATIC_PATH, LocalServer
 
 
 class TestLocalServer:
     """Tests for LocalServer."""
 
     def test_static_path_exists(self) -> None:
-        """Test that static path is set from textual-serve."""
-        assert STATIC_PATH is not None
-        assert STATIC_PATH.exists()
+        """Test that static path exists."""
+        assert WEBTERM_STATIC_PATH is not None
+        assert WEBTERM_STATIC_PATH.exists()
 
     def test_static_path_has_required_files(self) -> None:
         """Test that static path contains required assets."""
-        assert STATIC_PATH is not None
-        assert (STATIC_PATH / "js" / "textual.js").exists()
-        assert (STATIC_PATH / "css" / "xterm.css").exists()
+        assert WEBTERM_STATIC_PATH is not None
+        assert (WEBTERM_STATIC_PATH / "js" / "terminal.js").exists()
+        assert (WEBTERM_STATIC_PATH / "css" / "xterm.css").exists()
 
     def test_create_server(self, tmp_path) -> None:
         """Test creating a LocalServer instance."""

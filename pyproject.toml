@@ -6,11 +6,14 @@ authors = ["Will McGugan <will@textualize.io>"]
 license = "MIT"
 readme = "README.md"
 packages = [{include = "textual_webterm", from = "src"}]
-include = [{ path = "src/textual_webterm/static/monospace.css" }]
+include = [
+    { path = "src/textual_webterm/static/monospace.css" },
+    { path = "src/textual_webterm/static/css/xterm.css" },
+    { path = "src/textual_webterm/static/js/terminal.js" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-textual-serve = "^1.1.0"
 aiohttp = "^3.13.0"
 uvloop = { version = "^0.22.0", markers = "sys_platform != 'win32'" }
 click = "^8.1.7"

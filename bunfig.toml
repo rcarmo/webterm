@@ -1,0 +1,7 @@
+[install]
+# Prefer offline/cached packages
+prefer-offline = true
+
+[build]
+# Target modern browsers
+target = "browser"

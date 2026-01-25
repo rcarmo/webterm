@@ -37,22 +37,6 @@ SCREENSHOT_MAX_CACHE_SECONDS = 60.0
 WEBTERM_STATIC_PATH = Path(__file__).parent / "static"
 
 
-def _get_static_path() -> Path | None:
-    """Get the path to static assets from textual-serve."""
-    try:
-        import textual_serve
-
-        static_path = Path(textual_serve.__file__).parent / "static"
-        if static_path.exists():
-            return static_path
-    except ImportError:
-        log.warning("textual-serve not installed - static assets unavailable")
-    return None
-
-
-STATIC_PATH = _get_static_path()
-
-
 class LocalClientConnector(SessionConnector):
     """Local connector that handles communication between sessions and local server."""
 
@@ -258,14 +242,11 @@ class LocalServer:
             web.get("/", self._handle_root),
         ]
 
-        if STATIC_PATH is not None and STATIC_PATH.exists():
-            routes.append(web.static("/static", STATIC_PATH))
-            log.info("Static assets served from: %s", STATIC_PATH)
-        else:
-            log.error("Static assets not found at %s - terminal UI will not work", STATIC_PATH)
-
         if WEBTERM_STATIC_PATH.exists():
-            routes.append(web.static("/static-webterm", WEBTERM_STATIC_PATH))
+            routes.append(web.static("/static", WEBTERM_STATIC_PATH))
+            log.info("Static assets served from: %s", WEBTERM_STATIC_PATH)
+        else:
+            log.error("Static assets not found at %s - terminal UI will not work", WEBTERM_STATIC_PATH)
 
         return routes
 
@@ -838,67 +819,20 @@ class LocalServer:
         ws_url = self._get_ws_url_from_request(request, route_key)
         page_title = available_app.name if available_app else "Textual Web Terminal"
 
-        # Custom monospace font stack for terminals
-        custom_font = (
-            'ui-monospace, "SFMono-Regular", "FiraCode Nerd Font", '
-            '"FiraMono Nerd Font", "Fira Code", "Roboto Mono", Menlo, Monaco, '
-            'Consolas, "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace'
-        )
-        # Font to replace in xterm.js canvas rendering
-        old_font = "'Roboto Mono', Monaco, 'Courier New', monospace"
         html_content = f"""<!DOCTYPE html>
 <html>
 <head>
     <title>{page_title}</title>
     <link rel=\"stylesheet\" href=\"/static/css/xterm.css\">
-    <link rel=\"stylesheet\" href=\"/static-webterm/monospace.css\">
-    <script>
-      // Intercept canvas font assignments to override xterm.js fontFamily.
-      // xterm.js uses canvas/WebGL rendering which ignores CSS font-family.
-      // We monkey-patch CanvasRenderingContext2D.font setter to replace the default font.
-      (function() {{
-        const OLD_FONT = "{old_font}";
-        const CUSTOM_FONT = '{custom_font}';
-        const fontDescriptor = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'font');
-        if (fontDescriptor && fontDescriptor.set) {{
-          const originalSet = fontDescriptor.set;
-          Object.defineProperty(CanvasRenderingContext2D.prototype, 'font', {{
-            configurable: true,
-            enumerable: true,
-            get: fontDescriptor.get,
-            set: function(value) {{
-              // Replace xterm.js default font with our custom stack
-              if (typeof value === 'string' && value.includes(OLD_FONT)) {{
-                value = value.replace(OLD_FONT, CUSTOM_FONT);
-              }}
-              originalSet.call(this, value);
-            }}
-          }});
-        }}
-      }})();
-    </script>
-    <script src=\"/static/js/textual.js\"></script>
+    <link rel=\"stylesheet\" href=\"/static/monospace.css\">
     <style>
       body {{ background: #0c181f; margin: 0; padding: 0; }}
       .textual-terminal {{ width: 100vw; height: 100vh; }}
     </style>
 </head>
 <body>
-    <div id=\"terminal\" class=\"textual-terminal\" data-session-websocket-url=\"{ws_url}\" data-font-size=\"16\"></div>
-    <script>
-      // Focus terminal on load and when switching tabs back
-      (function() {{
-        function focusTerminal() {{
-          const textarea = document.querySelector('.xterm-helper-textarea');
-          if (textarea) {{ textarea.focus(); return; }}
-          const term = document.querySelector('.xterm');
-          if (term) {{ term.focus(); }}
-        }}
-        setTimeout(focusTerminal, 100);
-        setTimeout(focusTerminal, 500);
-        window.addEventListener('focus', focusTerminal);
-      }})();
-    </script>
+    <div id=\"terminal\" class=\"textual-terminal\" data-session-websocket-url=\"{ws_url}\" data-font-size=\"16\" data-scrollback=\"1000\"></div>
+    <script src=\"/static/js/terminal.js\"></script>
 </body>
 </html>"""
         return web.Response(text=html_content, content_type="text/html")
