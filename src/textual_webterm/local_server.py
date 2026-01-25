@@ -838,63 +838,64 @@ class LocalServer:
         ws_url = self._get_ws_url_from_request(request, route_key)
         page_title = available_app.name if available_app else "Textual Web Terminal"
 
+        # Custom monospace font stack for terminals
+        custom_font = (
+            'ui-monospace, "SFMono-Regular", "FiraCode Nerd Font", '
+            '"FiraMono Nerd Font", "Fira Code", "Roboto Mono", Menlo, Monaco, '
+            'Consolas, "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace'
+        )
+        # Font to replace in xterm.js canvas rendering
+        old_font = "'Roboto Mono', Monaco, 'Courier New', monospace"
         html_content = f"""<!DOCTYPE html>
 <html>
 <head>
     <title>{page_title}</title>
     <link rel=\"stylesheet\" href=\"/static/css/xterm.css\">
     <link rel=\"stylesheet\" href=\"/static-webterm/monospace.css\">
+    <script>
+      // Intercept canvas font assignments to override xterm.js fontFamily.
+      // xterm.js uses canvas/WebGL rendering which ignores CSS font-family.
+      // We monkey-patch CanvasRenderingContext2D.font setter to replace the default font.
+      (function() {{
+        const OLD_FONT = "{old_font}";
+        const CUSTOM_FONT = '{custom_font}';
+        const fontDescriptor = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'font');
+        if (fontDescriptor && fontDescriptor.set) {{
+          const originalSet = fontDescriptor.set;
+          Object.defineProperty(CanvasRenderingContext2D.prototype, 'font', {{
+            configurable: true,
+            enumerable: true,
+            get: fontDescriptor.get,
+            set: function(value) {{
+              // Replace xterm.js default font with our custom stack
+              if (typeof value === 'string' && value.includes(OLD_FONT)) {{
+                value = value.replace(OLD_FONT, CUSTOM_FONT);
+              }}
+              originalSet.call(this, value);
+            }}
+          }});
+        }}
+      }})();
+    </script>
     <script src=\"/static/js/textual.js\"></script>
     <style>
-      /* Match textual-serve defaults */
       body {{ background: #0c181f; margin: 0; padding: 0; }}
-      /* textual-serve relies on injected sizing CSS; make it explicit so layout works even if JS/CSS fail */
       .textual-terminal {{ width: 100vw; height: 100vh; }}
     </style>
 </head>
 <body>
     <div id=\"terminal\" class=\"textual-terminal\" data-session-websocket-url=\"{ws_url}\" data-font-size=\"16\"></div>
     <script>
-      // Override xterm.js font family (canvas/WebGL rendering ignores CSS)
+      // Focus terminal on load and when switching tabs back
       (function() {{
-        const FONT_FAMILY = 'ui-monospace, "SFMono-Regular", "FiraCode Nerd Font", "FiraMono Nerd Font", "Fira Code", "Roboto Mono", Menlo, Monaco, Consolas, "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace';
-
-        function patchTerminal() {{
-          // textual.js stores terminal instance on the container element
-          const container = document.querySelector('.textual-terminal');
-          if (container && container.terminal) {{
-            container.terminal.options.fontFamily = FONT_FAMILY;
-            return true;
-          }}
-          return false;
-        }}
-
         function focusTerminal() {{
           const textarea = document.querySelector('.xterm-helper-textarea');
-          if (textarea) {{
-            textarea.focus();
-            return true;
-          }}
+          if (textarea) {{ textarea.focus(); return; }}
           const term = document.querySelector('.xterm');
-          if (term) {{
-            term.focus();
-            return true;
-          }}
-          return false;
+          if (term) {{ term.focus(); }}
         }}
-
-        function initTerminal() {{
-          patchTerminal();
-          focusTerminal();
-        }}
-
-        // Try immediately and with delays as terminal initializes async
-        initTerminal();
-        setTimeout(initTerminal, 100);
-        setTimeout(initTerminal, 500);
-        setTimeout(initTerminal, 1000);
-
-        // Also focus on window focus (when switching tabs back)
+        setTimeout(focusTerminal, 100);
+        setTimeout(focusTerminal, 500);
         window.addEventListener('focus', focusTerminal);
       }})();
     </script>
