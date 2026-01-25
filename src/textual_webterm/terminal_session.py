@@ -262,6 +262,9 @@ class TerminalSession(Session):
         return True
 
     async def close(self) -> None:
+        # Cancel the read task first to unblock any waiting queue.get()
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
         if self.pid is not None:
             try:
                 os.kill(self.pid, signal.SIGHUP)
@@ -270,10 +273,10 @@ class TerminalSession(Session):
             except Exception as e:
                 log.warning("Error closing terminal session %s: %s", self.session_id, e)
 
-    async def wait(self) -> None:
+    async def wait(self, timeout: float = 2.0) -> None:
         if self._task is not None:
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._task
+            with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+                await asyncio.wait_for(asyncio.shield(self._task), timeout=timeout)
 
     def is_running(self) -> bool:
         """Check if the terminal session is still running."""

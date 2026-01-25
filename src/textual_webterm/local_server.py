@@ -253,12 +253,19 @@ class LocalServer:
     async def _shutdown(self) -> None:
         # Set exit event first so main loop exits immediately
         self.exit_event.set()
-        # Then clean up resources (best effort, don't block exit)
-        for ws in list(self._websocket_connections.values()):
+
+        # Clean up resources with timeout (best effort, don't block exit)
+        async def cleanup() -> None:
+            for ws in list(self._websocket_connections.values()):
+                with contextlib.suppress(Exception):
+                    await ws.close()
             with contextlib.suppress(Exception):
-                await ws.close()
-        with contextlib.suppress(Exception):
-            await self.session_manager.close_all()
+                await self.session_manager.close_all()
+
+        try:
+            await asyncio.wait_for(cleanup(), timeout=3.0)
+        except TimeoutError:
+            log.warning("Shutdown timed out, forcing exit")
 
     async def _run_local_server(self) -> None:
         app = web.Application()
