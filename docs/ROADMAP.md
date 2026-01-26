@@ -400,7 +400,7 @@ Not yet started. This would be a separate project (`textual-webterm-go`) providi
 
 ## pyte vs GoPyte: Thorough Comparison
 
-This section compares the Python **pyte** terminal emulator and the Go **GoPyte** emulator (per their upstream documentation/README). The focus is on capture accuracy, Unicode handling, performance expectations, and integration risk for textual-webterm.
+This section compares the Python **pyte** terminal emulator and the Go **GoPyte** emulator (per their upstream documentation/README). The focus is on capture accuracy, Unicode handling, performance expectations, and integration risk for textual-webterm. Where GoPyte details are unclear, we call them out explicitly as validation items.
 
 ### Feature Matrix (Capture-Relevant)
 
@@ -412,20 +412,24 @@ This section compares the Python **pyte** terminal emulator and the Go **GoPyte*
 | **Scrollback/history** | HistoryScreen (configurable) | Built-in scrollback (claims) | Semantics may differ; check memory cost. |
 | **Resize behavior** | Resizes + cursor + dirty state | Resizes + content (claims) | Must preserve content on resize. |
 | **SGR attributes** | Bold/underline/reverse/color | SGR attrs (claims) | Verify italics, faint, strikethrough. |
+| **Underline styles** | Basic underline | Unknown | Double/curly underline may be missing. |
 | **Color depth** | ANSI + 256 + (truecolor in practice) | ANSI + 256? (verify) | Truecolor required for accurate screenshots. |
 | **DEC special graphics** | Supported (line drawing) | Unknown | Box-drawing is critical for TUIs. |
+| **Character sets (G0/G1)** | Supported | Unknown | Needed for legacy line-drawing. |
 | **Scroll regions** | Supported | Unknown | Needed for curses-style UI. |
 | **Insert/delete (IL/DL/ICH/DCH)** | Supported | Unknown | Affects screen fidelity during updates. |
 | **Tabs / tab stops** | Supported | Unknown | UI alignment depends on tabs. |
-| **Wrap / origin modes** | Supported | Unknown | Impacts cursor positioning and layout. |
+| **Autowrap/origin modes** | Supported | Unknown | Impacts cursor positioning and layout. |
 | **Cursor save/restore** | Supported | Unknown | Common in TUIs and prompts. |
+| **Cursor visibility/style** | Basic visibility | Unknown | Useful for accurate snapshots. |
+| **Erase semantics (ED/EL)** | Supported | Unknown | Correct clearing is vital for screenshots. |
 | **Unicode width** | wcwidth-style width | go-runewidth | Width differences can misalign SVG. |
 | **Combining marks / ZWJ** | Unicode-aware | runewidth-based | Emoji sequences may differ in width. |
 | **Dirty tracking** | Exposes dirty set / DiffScreen | Unknown | Needed for efficient screenshot caching. |
 | **Images (sixel/kitty)** | Not supported | Not supported | Not required, but a capture limitation. |
 | **Performance** | Python, moderate | Go, claims high throughput | Benchmark under heavy output. |
 | **API stability** | Mature, widely used | Newer, smaller ecosystem | Risk of breaking changes. |
-| **Test maturity** | Established | Claimed high coverage | Must run our own parity suite. |
+| **Test maturity** | Established | Claims high coverage | Must run our own parity suite. |
 
 ### Unicode & Emoji Handling (Critical for SVG Capture)
 
@@ -465,8 +469,19 @@ We depend on the emulator for **accurate snapshot state**, not just live display
 - **Dirty tracking or diffability** to avoid re-rendering unchanged screens.
 - Reliable **color mapping** (ANSI 16 + 256 + truecolor).
 - Correct **DEC line drawing** (box-drawing characters).
+- Correct **erase semantics** (ED/EL) to avoid stale cells.
 
 If any of these are missing, screenshots will be wrong or expensive to compute.
+
+### Capture-Enhancing (Nice-to-Have) Features
+
+These aren’t required for parity, but would improve capture quality or UX:
+
+- **OSC 8 hyperlink metadata** to annotate clickable URLs in SVG output.
+- **Underline styles** (double/curly) for richer text attributes.
+- **Cursor style/shape** metadata for accurate snapshots.
+- **Grapheme cluster awareness** (emoji sequences treated as single cells).
+- **Structured diffs** from emulator (explicit dirty regions instead of full screen).
 
 ### Known Gaps / Validation Checklist
 
@@ -474,12 +489,15 @@ Before relying on GoPyte for parity, verify:
 
 - [ ] Full-screen app behavior (vim, htop, less) with alt screen.
 - [ ] DEC line drawing / special graphics set (box-drawing correctness).
+- [ ] Character set switching (G0/G1) for legacy graphics.
 - [ ] Scroll regions (DECSTBM) and origin mode behavior.
 - [ ] Insert/delete line/char (IL/DL/ICH/DCH) correctness.
 - [ ] Tab stops and tab clear (alignment in TUIs).
 - [ ] SGR coverage: bold/underline/italic/reverse + 256/truecolor.
+- [ ] Underline styles, faint, strikethrough.
 - [ ] Unicode width parity with pyte (emoji + CJK samples).
 - [ ] Cursor save/restore (DECSC/DECRC) and visibility toggles.
+- [ ] Erase semantics (ED/EL) and autowrap correctness.
 - [ ] Resize correctness (content preservation, cursor placement).
 - [ ] Performance at high output rates (100k+ lines, low latency).
 
