@@ -398,6 +398,84 @@ Not yet started. This would be a separate project (`textual-webterm-go`) providi
 
 ---
 
+## pyte vs GoPyte: Thorough Comparison
+
+This section compares the Python **pyte** terminal emulator and the Go **GoPyte** emulator (per their upstream documentation/README). The focus is on feature parity, Unicode handling, performance expectations, and integration risk for textual-webterm.
+
+### Feature Matrix (High-Level)
+
+| Capability | pyte (Python) | GoPyte (Go) | Notes / Risks |
+|-----------|---------------|-------------|---------------|
+| **Terminal standards** | VTXXX/ANSI (VT100-style) | VT100/VT220/ANSI (claims) | GoPyte scope may differ; verify DEC private modes. |
+| **Screen buffer model** | In-memory Screen buffer (sparse-like cells) | In-memory Screen buffer | Both expose per-cell attributes, but data model differs. |
+| **Alternate screen** | Supported (via Screen classes) | Supported (claims) | Validate behavior with full-screen apps (vim, less). |
+| **Scrollback/history** | HistoryScreen class (limited, configurable) | Built-in scrollback (claims) | Ensure scrollback size/cost acceptable. |
+| **Resize behavior** | Resizes screen + cursor + dirty state | Resizes screen + content (claims) | Validate content preservation on resize. |
+| **SGR attributes** | Bold, underline, reverse, color | SGR attributes (claims) | Verify complete SGR coverage (e.g., faint, italics). |
+| **Colors** | ANSI color codes supported | ANSI color codes supported | 256-color/truecolor support must be verified. |
+| **Unicode width** | Uses `wcwidth`/unicode width | Uses `go-runewidth` | Emoji and East Asian width differences likely. |
+| **Performance** | Pure Python, adequate for most loads | Go, claims high throughput | Benchmark with real terminal workloads. |
+| **API stability** | Mature, widely used | Newer, smaller ecosystem | Risk: breaking API changes or missing features. |
+| **Testing** | Mature test suite | Claims high coverage | Validate critical sequences for our use. |
+
+### Unicode & Emoji Handling
+
+**pyte**
+- Uses Python Unicode + width calculation (via `wcwidth`-style logic).
+- Generally robust for wide CJK and emoji, but width edge cases are known across terminals.
+
+**GoPyte**
+- Uses `go-runewidth` for width calculation.
+- Width differences vs `wcwidth` may cause rendering mismatches in SVG screenshots.
+
+**Impact for textual-webterm**
+- Any width mismatch affects glyph positioning in screenshots.
+- We must validate CJK/emoji rendering across browsers and SVG output.
+
+### Performance & Memory
+
+**pyte**
+- Pure Python; adequate for typical terminal workloads.
+- Performance is predictable but slower than Go for heavy output.
+
+**GoPyte**
+- Go implementation; upstream claims high throughput.
+- Performance depends heavily on screen model + allocation strategy.
+
+**Action**: Benchmark with real workloads (large scrollback, fast output).
+
+### Maintenance & Maturity
+
+**pyte**
+- Long-lived, stable, widely used.
+- Well-known behavior and edge cases.
+
+**GoPyte**
+- Newer, smaller community.
+- Claimed feature set is promising but less battle-tested.
+
+**Action**: Track issue backlog and recent activity before committing.
+
+### Known Gaps / Validation Checklist
+
+Before relying on GoPyte for parity, verify:
+
+- [ ] Full-screen app behavior (vim, htop, less) with alt screen.
+- [ ] SGR coverage: bold/underline/italic/reverse + 256/truecolor.
+- [ ] Unicode width parity with pyte (emoji + CJK samples).
+- [ ] Cursor state transitions across resize and alternate screen.
+- [ ] Scrollback semantics (history vs scrollback buffer model).
+- [ ] Performance at high output rates (100k+ lines, low latency).
+
+### Integration Implications for textual-webterm
+
+- **Screen buffer mapping**: GoPyte’s cell structure must map into our SVG exporter schema (fg/bg/bold/underline/reverse).
+- **Dirty tracking**: pyte exposes dirty state; GoPyte may need explicit diff tracking for efficient screenshot caching.
+- **Color translation**: Ensure SGR parsing aligns with our ANSI palette and truecolor handling.
+- **Replay buffer**: Our replay buffer is independent, but needs to coordinate with screen state updates for consistent screenshots.
+
+---
+
 ## What We'd Gain
 
 | Benefit | Impact |
