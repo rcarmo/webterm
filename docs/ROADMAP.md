@@ -364,3 +364,394 @@ RUN bun run build
 - [x] No textual-serve dependency in pyproject.toml
 - [x] All existing tests pass (302 tests)
 - [x] Documentation updated
+
+---
+---
+
+# Future: Go Reimplementation
+
+This section analyzes what it would take to reimplement textual-webterm in Go for lighter deployment.
+
+## Status: 📋 Planning
+
+Not yet started. This would be a separate project (`textual-webterm-go`) providing a lightweight alternative.
+
+## Executive Summary
+
+**Most functionality can be reimplemented in Go** with mature libraries. The main challenge is the terminal emulator (pyte equivalent) - GoPyte exists but is less battle-tested than Python's pyte. Benefits would be a single static binary, lower memory footprint, and better concurrency.
+
+---
+
+## Component Mapping
+
+| Python Component | Go Equivalent | Library | Maturity |
+|-----------------|---------------|---------|----------|
+| **aiohttp** (HTTP/WS server) | net/http + websocket | `gorilla/websocket` or `nhooyr.io/websocket` | ⭐⭐⭐⭐⭐ Excellent |
+| **pyte** (terminal emulator) | GoPyte | `github.com/scottpeterman/gopyte` | ⭐⭐⭐ Good |
+| **PTY handling** | go-pty | `github.com/aymanbagabas/go-pty` | ⭐⭐⭐⭐ Very Good |
+| **asyncio** (concurrency) | goroutines/channels | stdlib | ⭐⭐⭐⭐⭐ Native |
+| **SSE** | Custom handler | stdlib `net/http` | ⭐⭐⭐⭐ Simple |
+| **Docker stats** | Docker SDK | `github.com/docker/docker/client` | ⭐⭐⭐⭐⭐ Official |
+| **SVG generation** | SVGo | `github.com/ajstarks/svgo` | ⭐⭐⭐⭐⭐ Mature |
+| **YAML parsing** | yaml.v3 | `gopkg.in/yaml.v3` | ⭐⭐⭐⭐⭐ Standard |
+| **CLI** | cobra | `github.com/spf13/cobra` | ⭐⭐⭐⭐⭐ Standard |
+
+---
+
+## What We'd Gain
+
+| Benefit | Impact |
+|---------|--------|
+| **Single static binary** | No Python/pip dependency, simpler deployment |
+| **Lower memory** | ~10-20MB vs ~50-100MB for Python |
+| **Better concurrency** | Goroutines vs asyncio - more intuitive |
+| **Faster startup** | Instant vs Python interpreter load |
+| **Cross-compilation** | Easy builds for Linux/macOS/Windows/ARM |
+| **Smaller Docker image** | ~20MB vs ~200MB+ with Python |
+
+## What We'd Lose
+
+| Loss | Impact |
+|------|--------|
+| **Textual app support** | Cannot run Python Textual apps directly |
+| **Rapid prototyping** | Go requires more boilerplate |
+| **pyte maturity** | GoPyte is less proven |
+
+---
+
+## Required Go Dependencies
+
+```go
+// go.mod
+module github.com/rcarmo/textual-webterm-go
+
+go 1.22
+
+require (
+    // HTTP/WebSocket
+    github.com/gorilla/websocket v1.5.1
+    
+    // Terminal emulation
+    github.com/scottpeterman/gopyte v0.1.0
+    
+    // PTY handling
+    github.com/aymanbagabas/go-pty v0.2.2
+    
+    // Docker stats
+    github.com/docker/docker v25.0.0
+    
+    // SVG generation
+    github.com/ajstarks/svgo v0.0.0-20211024235047-1546f124cd8b
+    
+    // CLI
+    github.com/spf13/cobra v1.8.0
+    
+    // YAML parsing
+    gopkg.in/yaml.v3 v3.0.1
+)
+```
+
+---
+
+## Implementation Plan
+
+### Phase 1: Project Setup & Core Server (2 days)
+
+**Goal**: Basic HTTP server with WebSocket support
+
+**Tasks**:
+- [ ] Initialize Go module with dependencies
+- [ ] Create basic HTTP server with routing
+- [ ] Implement WebSocket upgrade handler
+- [ ] Port JSON message protocol (stdin, resize, ping/pong)
+- [ ] Add graceful shutdown handling
+
+**Files**:
+```
+cmd/
+  webterm/
+    main.go           # Entry point
+internal/
+  server/
+    server.go         # HTTP server
+    websocket.go      # WebSocket handler
+    routes.go         # Route definitions
+```
+
+### Phase 2: PTY Session Management (2 days)
+
+**Goal**: Spawn and manage terminal sessions
+
+**Tasks**:
+- [ ] Integrate go-pty for PTY creation
+- [ ] Implement session lifecycle (create, resize, close)
+- [ ] Build session manager with route mapping
+- [ ] Add replay buffer for reconnection
+- [ ] Handle concurrent session access
+
+**Files**:
+```
+internal/
+  session/
+    manager.go        # Session registry
+    terminal.go       # PTY session wrapper
+    buffer.go         # Replay ring buffer
+```
+
+### Phase 3: Terminal Emulation (2 days)
+
+**Goal**: Parse ANSI sequences for screen state
+
+**Tasks**:
+- [ ] Integrate GoPyte terminal emulator
+- [ ] Feed PTY output through emulator
+- [ ] Extract screen buffer for screenshots
+- [ ] Implement dirty tracking for cache invalidation
+- [ ] Handle resize events
+
+**Files**:
+```
+internal/
+  terminal/
+    emulator.go       # GoPyte wrapper
+    screen.go         # Screen buffer access
+```
+
+### Phase 4: SVG Screenshot Generation (1.5 days)
+
+**Goal**: Generate terminal screenshots as SVG
+
+**Tasks**:
+- [ ] Port character positioning logic from Python
+- [ ] Implement ANSI color palette (16 + 256 + truecolor)
+- [ ] Handle box-drawing character scaling
+- [ ] Add screenshot caching with ETag support
+- [ ] Implement cache TTL backoff
+
+**Files**:
+```
+internal/
+  screenshot/
+    svg.go            # SVG renderer
+    colors.go         # ANSI color handling
+    cache.go          # Screenshot cache
+```
+
+### Phase 5: Dashboard & SSE (1.5 days)
+
+**Goal**: Landing page with live updates
+
+**Tasks**:
+- [ ] Embed static assets (HTML, CSS, xterm.js bundle)
+- [ ] Implement SSE endpoint for activity notifications
+- [ ] Port dashboard HTML template
+- [ ] Add tile rendering with screenshots
+
+**Files**:
+```
+internal/
+  dashboard/
+    handler.go        # Dashboard HTTP handler
+    sse.go            # Server-Sent Events
+  static/
+    embed.go          # Embedded assets
+```
+
+### Phase 6: Docker Stats (1 day)
+
+**Goal**: CPU sparklines for compose mode
+
+**Tasks**:
+- [ ] Integrate Docker SDK client
+- [ ] Implement container stats polling
+- [ ] Calculate CPU percentage from deltas
+- [ ] Generate sparkline SVGs
+- [ ] Filter by compose project label
+
+**Files**:
+```
+internal/
+  docker/
+    stats.go          # Stats collector
+    sparkline.go      # SVG sparkline
+```
+
+### Phase 7: CLI & Configuration (1 day)
+
+**Goal**: Feature-complete CLI
+
+**Tasks**:
+- [ ] Implement Cobra CLI with flags
+- [ ] Parse YAML landing manifests
+- [ ] Parse Docker Compose manifests
+- [ ] Add version command
+- [ ] Environment variable support
+
+**Files**:
+```
+cmd/
+  webterm/
+    main.go           # CLI entry point
+internal/
+  config/
+    config.go         # Configuration types
+    manifest.go       # YAML parsing
+```
+
+### Phase 8: Testing & Polish (2 days)
+
+**Goal**: Production-ready release
+
+**Tasks**:
+- [ ] Unit tests for core components
+- [ ] Integration tests for WebSocket protocol
+- [ ] Cross-browser testing
+- [ ] Build scripts for multiple platforms
+- [ ] Docker image (FROM scratch)
+- [ ] Documentation
+
+**Files**:
+```
+Makefile              # Build targets
+Dockerfile            # Multi-stage build
+README.md             # Usage docs
+```
+
+---
+
+## Effort Summary
+
+| Phase | Component | Days |
+|-------|-----------|------|
+| 1 | Project Setup & Core Server | 2 |
+| 2 | PTY Session Management | 2 |
+| 3 | Terminal Emulation | 2 |
+| 4 | SVG Screenshot Generation | 1.5 |
+| 5 | Dashboard & SSE | 1.5 |
+| 6 | Docker Stats | 1 |
+| 7 | CLI & Configuration | 1 |
+| 8 | Testing & Polish | 2 |
+| **Total** | | **13 days** |
+
+---
+
+## File Structure (Final)
+
+```
+textual-webterm-go/
+├── cmd/
+│   └── webterm/
+│       └── main.go
+├── internal/
+│   ├── config/
+│   │   ├── config.go
+│   │   └── manifest.go
+│   ├── dashboard/
+│   │   ├── handler.go
+│   │   └── sse.go
+│   ├── docker/
+│   │   ├── sparkline.go
+│   │   └── stats.go
+│   ├── screenshot/
+│   │   ├── cache.go
+│   │   ├── colors.go
+│   │   └── svg.go
+│   ├── server/
+│   │   ├── routes.go
+│   │   ├── server.go
+│   │   └── websocket.go
+│   ├── session/
+│   │   ├── buffer.go
+│   │   ├── manager.go
+│   │   └── terminal.go
+│   ├── static/
+│   │   └── embed.go
+│   └── terminal/
+│       ├── emulator.go
+│       └── screen.go
+├── static/
+│   ├── css/
+│   │   └── xterm.css
+│   └── js/
+│       └── terminal.js
+├── go.mod
+├── go.sum
+├── Makefile
+├── Dockerfile
+└── README.md
+```
+
+---
+
+## Build & Release
+
+### Makefile Targets
+
+```makefile
+.PHONY: build build-all test clean
+
+BINARY := webterm
+VERSION := $(shell git describe --tags --always)
+LDFLAGS := -s -w -X main.version=$(VERSION)
+
+build:
+	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/webterm
+
+build-all:
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-linux-amd64 ./cmd/webterm
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-linux-arm64 ./cmd/webterm
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-darwin-amd64 ./cmd/webterm
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-darwin-arm64 ./cmd/webterm
+
+test:
+	go test -v ./...
+
+clean:
+	rm -rf bin/
+```
+
+### Minimal Docker Image
+
+```dockerfile
+FROM golang:1.22-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags "-s -w" -o webterm ./cmd/webterm
+
+FROM scratch
+COPY --from=builder /app/webterm /webterm
+ENTRYPOINT ["/webterm"]
+```
+
+**Result**: ~15-20MB Docker image vs ~200MB+ for Python version.
+
+---
+
+## Decision Criteria
+
+Proceed with Go reimplementation if:
+
+- [ ] Deployment size is critical (embedded, edge, IoT)
+- [ ] No need for Textual app support
+- [ ] Want single-binary distribution
+- [ ] Memory constraints matter
+
+Keep Python version if:
+
+- [ ] Need Textual app support
+- [ ] Rapid iteration is priority
+- [ ] Team more familiar with Python
+- [ ] Current deployment size is acceptable
+
+---
+
+## References
+
+- GoPyte: https://github.com/scottpeterman/gopyte
+- go-pty: https://github.com/aymanbagabas/go-pty
+- Gorilla WebSocket: https://github.com/gorilla/websocket
+- Docker Go SDK: https://pkg.go.dev/github.com/docker/docker/client
+- SVGo: https://github.com/ajstarks/svgo
+- Cobra CLI: https://github.com/spf13/cobra
