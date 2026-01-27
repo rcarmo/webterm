@@ -31,8 +31,8 @@ log = logging.getLogger("textual-web")
 
 DEFAULT_TERMINAL_SIZE = (132, 45)
 
-SCREENSHOT_CACHE_SECONDS = 1.0
-SCREENSHOT_MAX_CACHE_SECONDS = 60.0
+SCREENSHOT_CACHE_SECONDS = 0.3
+SCREENSHOT_MAX_CACHE_SECONDS = 20.0
 
 WEBTERM_STATIC_PATH = Path(__file__).parent / "static"
 
@@ -69,9 +69,9 @@ class LocalServer:
     def mark_route_activity(self, route_key: str) -> None:
         now = asyncio.get_event_loop().time()
         self._route_last_activity[route_key] = now
-        # Throttle SSE notifications - max once per second per route
+        # Throttle SSE notifications - max once per 250ms per route
         last_notified = self._route_last_sse_notification.get(route_key, 0.0)
-        if now - last_notified >= 1.0:
+        if now - last_notified >= 0.25:
             self._route_last_sse_notification[route_key] = now
             self._notify_activity(route_key)
 
@@ -102,12 +102,12 @@ class LocalServer:
         idle_for = max(0.0, now - last_activity)
 
         # Active sessions refresh quickly; idle sessions back off aggressively.
-        if idle_for < 5.0:
+        if idle_for < 3.0:
             return SCREENSHOT_CACHE_SECONDS
-        if idle_for < 30.0:
+        if idle_for < 15.0:
+            return 2.0
+        if idle_for < 120.0:
             return 5.0
-        if idle_for < 300.0:
-            return 15.0
         return SCREENSHOT_MAX_CACHE_SECONDS
 
     """Manages local Textual apps and terminals without Ganglion server."""
@@ -465,15 +465,15 @@ class LocalServer:
             raise web.HTTPNotFound(text="Session not found")
 
         # Get the actual screen state from the terminal session's pyte screen
-        # This includes has_changes flag from pyte's dirty tracking
-        screen_width, screen_height, screen_buffer, has_changes = await session_process.get_screen_state()  # type: ignore[union-attr]
-
-        # If screen hasn't changed, serve cached screenshot immediately
+        # Use a lightweight dirty check first to avoid clearing dirty flags unnecessarily.
+        has_changes = await session_process.get_screen_has_changes()  # type: ignore[union-attr]
         cached = self._screenshot_cache.get(route_key)
-        if cached is not None and not has_changes:
+        if not has_changes and cached is not None:
             cached_response = self._get_cached_screenshot_response(request, route_key)
             if cached_response is not None:
                 return cached_response
+
+        screen_width, screen_height, screen_buffer, _ = await session_process.get_screen_state()  # type: ignore[union-attr]
 
         now = asyncio.get_event_loop().time()
         ttl = self._get_screenshot_cache_ttl(route_key, now)
@@ -732,7 +732,7 @@ class LocalServer:
         // Debounce tracking per tile
         const pendingRefresh = {{}};
         const lastRefresh = {{}};
-        const REFRESH_DEBOUNCE_MS = 2000;  // Min 2s between refreshes per tile
+        const REFRESH_DEBOUNCE_MS = 500;  // Min 0.5s between refreshes per tile
 
         function scheduleRefreshTile(slug) {{
             const now = Date.now();

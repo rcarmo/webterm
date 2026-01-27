@@ -289,6 +289,99 @@ class TestTerminalSession:
         mock_exit.assert_called_once_with(1)
 
     @pytest.mark.asyncio
+    async def test_get_screen_lines_strips(self):
+        from textual_webterm.terminal_session import TerminalSession
+
+        poller = MagicMock()
+        session = TerminalSession(poller, "sid", "bash")
+        session._screen = MagicMock()
+        session._screen.display = ["line  ", "next"]
+
+        class DummyLock:
+            async def __aenter__(self):
+                return None
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+        session._screen_lock = DummyLock()
+
+        lines = await session.get_screen_lines()
+        assert lines == ["line", "next"]
+
+    @pytest.mark.asyncio
+    async def test_get_screen_state_no_changes(self):
+        from textual_webterm.terminal_session import TerminalSession
+
+        poller = MagicMock()
+        session = TerminalSession(poller, "sid", "bash")
+        session._screen = MagicMock()
+        session._screen.columns = 1
+        session._screen.lines = 1
+        session._screen.dirty = set()
+        session._screen.buffer = [[MagicMock(data=" ", fg=0, bg=0, bold=False, italics=False, underscore=False, reverse=False)]]
+        session._sync_pyte_to_pty = AsyncMock()
+
+        class DummyLock:
+            async def __aenter__(self):
+                return None
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+        session._screen_lock = DummyLock()
+
+        width, height, _buffer, changed = await session.get_screen_state()
+        assert width == 1
+        assert height == 1
+        assert changed is False
+
+    @pytest.mark.asyncio
+    async def test_get_screen_state_clears_dirty(self):
+        from textual_webterm.terminal_session import TerminalSession
+
+        poller = MagicMock()
+        session = TerminalSession(poller, "sid", "bash")
+        session._screen = MagicMock()
+        session._screen.columns = 2
+        session._screen.lines = 1
+        session._screen.dirty = {1}
+        session._screen.buffer = [[MagicMock(data="x", fg=0, bg=0, bold=False, italics=False, underscore=False, reverse=False),
+                                   MagicMock(data="y", fg=0, bg=0, bold=False, italics=False, underscore=False, reverse=False)]]
+        session._sync_pyte_to_pty = AsyncMock()
+
+        class DummyLock:
+            async def __aenter__(self):
+                return None
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+        session._screen_lock = DummyLock()
+
+        width, height, _buffer, changed = await session.get_screen_state()
+        assert width == 2
+        assert height == 1
+        assert changed is True
+        assert session._screen.dirty == set()
+
+    @pytest.mark.asyncio
+    async def test_get_screen_has_changes_reads_dirty(self):
+        from textual_webterm.terminal_session import TerminalSession
+
+        poller = MagicMock()
+        session = TerminalSession(poller, "sid", "bash")
+        session._screen = MagicMock()
+        session._screen.dirty = {1}
+        class DummyLock:
+            async def __aenter__(self):
+                return None
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+        session._screen_lock = DummyLock()
+        session._sync_pyte_to_pty = AsyncMock()
+
+        changed = await session.get_screen_has_changes()
+        assert changed is True
+        session._screen.dirty = set()
+        changed = await session.get_screen_has_changes()
+        assert changed is False
+
+    @pytest.mark.asyncio
     async def test_send_bytes_handles_closed_fd(self):
         from textual_webterm.terminal_session import TerminalSession
 

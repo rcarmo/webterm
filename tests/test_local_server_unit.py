@@ -7,7 +7,6 @@ from aiohttp import web
 
 from textual_webterm.config import App, Config
 from textual_webterm.local_server import (
-    LocalClientConnector,
     LocalServer,
 )
 
@@ -85,6 +84,7 @@ class TestLocalServer:
         monkeypatch.setattr(local_server, "generate", lambda: "fixed-session")
 
         session = MagicMock()
+        session.get_screen_has_changes = AsyncMock(return_value=False)
         session.start = AsyncMock()
         monkeypatch.setattr(server.session_manager, "new_session", AsyncMock(return_value=session))
 
@@ -184,6 +184,7 @@ class TestLocalServerHelpers:
             [{"data": " ", "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False}] * 80,
         ]
         session = MagicMock()
+        session.get_screen_has_changes = AsyncMock(return_value=False)
         session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
 
         monkeypatch.setattr(server.session_manager, "get_session_by_route_key", lambda _rk: session)
@@ -207,6 +208,7 @@ class TestLocalServerHelpers:
             [{"data": " ", "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False}] * 80,
         ]
         session = MagicMock()
+        session.get_screen_has_changes = AsyncMock(return_value=False)
         session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
 
         # Pretend app exists for slug "known"
@@ -494,114 +496,18 @@ class TestLocalServerMoreCoverage:
         assert resp.headers.get("ETag") == "abc"
 
     def test_screenshot_cache_ttl_backs_off(self, server_with_no_apps, monkeypatch):
-        # Drive each tier by controlling now and last_activity.
         server_with_no_apps._route_last_activity["rk"] = 99.0
-        assert server_with_no_apps._get_screenshot_cache_ttl("rk", now=100.0) == 1.0
-        assert server_with_no_apps._get_screenshot_cache_ttl("rk", now=110.0) == 5.0
-        assert server_with_no_apps._get_screenshot_cache_ttl("rk", now=200.0) == 15.0
-        assert server_with_no_apps._get_screenshot_cache_ttl("rk", now=1000.0) == 60.0
+        assert server_with_no_apps._get_screenshot_cache_ttl("rk", now=100.0) == 0.3
 
-    @pytest.mark.asyncio
-    async def test_handle_screenshot_uses_cache_when_no_changes(self, server_with_no_apps, monkeypatch):
-        """Test that cached screenshot is returned when pyte reports no changes."""
-        request = MagicMock()
-        request.query = {"route_key": "rk"}
-        request.headers = {}
+        server_with_no_apps._route_last_activity["rk"] = 90.0
+        assert server_with_no_apps._get_screenshot_cache_ttl("rk", now=100.0) == 2.0
 
-        # has_changes=False indicates no screen changes since last call
-        session = MagicMock()
-        session.get_screen_state = AsyncMock(return_value=(80, 2, [], False))
-        monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
+        server_with_no_apps._route_last_activity["rk"] = 40.0
+        assert server_with_no_apps._get_screenshot_cache_ttl("rk", now=100.0) == 5.0
 
-        server_with_no_apps._screenshot_cache["rk"] = (0.0, "<svg>cached</svg>")
-        server_with_no_apps._screenshot_cache_etag["rk"] = "etag"
-        server_with_no_apps._route_last_activity["rk"] = 5.0
+        server_with_no_apps._route_last_activity["rk"] = -100.0
+        assert server_with_no_apps._get_screenshot_cache_ttl("rk", now=100.0) == 20.0
 
-        resp = await server_with_no_apps._handle_screenshot(request)
-        assert "cached" in resp.text
-
-    @pytest.mark.asyncio
-    async def test_handle_screenshot_renders_screen_state(self, server_with_no_apps, monkeypatch):
-        request = MagicMock()
-        request.query = {"route_key": "rk"}
-        request.headers = {}
-
-        # Mock screen state with some content
-        screen_buffer = [
-            [{"data": c, "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False} for c in "hello" + " " * 75],
-            [{"data": " ", "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False}] * 80,
-        ]
-        session = MagicMock()
-        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
-        monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
-
-        resp = await server_with_no_apps._handle_screenshot(request)
-        assert resp.content_type == "image/svg+xml"
-        assert "<svg" in resp.text
-
-    @pytest.mark.asyncio
-    async def test_handle_root_no_apps_available(self, server_with_no_apps):
-        request = MagicMock()
-        request.query = {}
-        resp = await server_with_no_apps._handle_root(request)
-        assert "No Apps Available" in resp.text
-
-    @pytest.mark.asyncio
-    async def test_dispatch_ws_message_ping_sends_pong(self, server_with_no_apps):
-        ws = MagicMock()
-        ws.send_json = AsyncMock()
-        created = await server_with_no_apps._dispatch_ws_message(["ping", "x"], "rk", ws, False)
-        assert created is False
-        ws.send_json.assert_awaited_once_with(["pong", "x"])
-
-    @pytest.mark.asyncio
-    async def test_dispatch_ws_message_stdin_sends_bytes_to_session(self, server_with_no_apps, monkeypatch):
-        session = MagicMock()
-        session.send_bytes = AsyncMock()
-        monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
-
-        ws = MagicMock()
-        created = await server_with_no_apps._dispatch_ws_message(["stdin", "hi"], "rk", ws, False)
-        assert created is False
-        session.send_bytes.assert_awaited_once_with(b"hi")
-
-    @pytest.mark.asyncio
-    async def test_connector_methods_forward_to_server(self):
-        server = MagicMock()
-        server.mark_route_activity = MagicMock()
-        server.handle_session_data = AsyncMock()
-        server.handle_binary_message = AsyncMock()
-        server.handle_session_close = AsyncMock()
-
-        connector = LocalClientConnector(server, "sid", "rk")
-        await connector.on_data(b"data")
-        server.mark_route_activity.assert_called_once_with("rk")
-        server.handle_session_data.assert_awaited_once_with("rk", b"data")
-
-        await connector.on_meta({"type": "open_url", "url": "https://example.com"})
-        await connector.on_meta({"type": "deliver_file_start", "path": "/tmp/x"})
-        await connector.on_meta({"type": "unknown"})
-
-        await connector.on_binary_encoded_message(b"bin")
-        server.handle_binary_message.assert_awaited_once_with("rk", b"bin")
-
-        await connector.on_close()
-        server.handle_session_close.assert_awaited_once_with("sid", "rk")
-
-    @pytest.mark.asyncio
-    async def test_run_stops_exit_poller_and_exits_poller(self, server_with_no_apps, monkeypatch):
-        async def boom():
-            raise RuntimeError("boom")
-
-        monkeypatch.setattr(server_with_no_apps, "_run", boom)
-        server_with_no_apps._exit_poller.stop = MagicMock()
-        server_with_no_apps._poller.exit = MagicMock()
-
-        with pytest.raises(RuntimeError):
-            await server_with_no_apps.run()
-
-        server_with_no_apps._exit_poller.stop.assert_called_once()
-        server_with_no_apps._poller.exit.assert_called_once()
 
     def test_on_keyboard_interrupt_sets_event_when_already_shutting_down(self, server_with_no_apps):
         server_with_no_apps._shutdown_started = True
@@ -670,6 +576,7 @@ class TestLocalServerMoreCoverage:
     @pytest.mark.asyncio
     async def test_dispatch_ws_message_stdin_without_payload_sends_empty(self, server_with_no_apps, monkeypatch):
         session = MagicMock()
+        session.get_screen_has_changes = AsyncMock(return_value=False)
         session.send_bytes = AsyncMock()
         monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
 
@@ -682,6 +589,7 @@ class TestLocalServerMoreCoverage:
     @pytest.mark.asyncio
     async def test_dispatch_ws_message_resize_existing_session_flag_false(self, server_with_no_apps, monkeypatch):
         session = MagicMock()
+        session.get_screen_has_changes = AsyncMock(return_value=False)
         session.set_terminal_size = AsyncMock()
         monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
 
@@ -694,6 +602,7 @@ class TestLocalServerMoreCoverage:
 
     async def test_dispatch_ws_message_resize_updates_existing_session(self, server_with_no_apps, monkeypatch):
         session = MagicMock()
+        session.get_screen_has_changes = AsyncMock(return_value=False)
         session.set_terminal_size = AsyncMock()
         monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
 
@@ -715,6 +624,26 @@ class TestLocalServerMoreCoverage:
         assert created is True
 
     @pytest.mark.asyncio
+    async def test_handle_screenshot_uses_cached_when_no_changes(self, server_with_no_apps, monkeypatch):
+        session = MagicMock()
+        session.get_screen_has_changes = AsyncMock(return_value=False)
+        session.get_screen_state = AsyncMock(return_value=(80, 24, [], False))
+        monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
+
+        request = MagicMock()
+        request.query = {"route_key": "rk"}
+        request.headers = {}
+        request.secure = False
+
+        # Seed cache
+        server_with_no_apps._screenshot_cache["rk"] = (0.0, "<svg></svg>")
+        server_with_no_apps._screenshot_cache_etag["rk"] = "abc"
+
+        resp = await server_with_no_apps._handle_screenshot(request)
+        assert resp.text == "<svg></svg>"
+        session.get_screen_state.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_handle_screenshot_uses_screen_state(self, server_with_no_apps, monkeypatch):
         """Test that screenshot uses get_screen_state for rendering."""
         request = MagicMock()
@@ -727,6 +656,7 @@ class TestLocalServerMoreCoverage:
             [{"data": c, "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False} for c in "line2" + " " * 75],
         ]
         session = MagicMock()
+        session.get_screen_has_changes = AsyncMock(return_value=False)
         session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
         monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
 

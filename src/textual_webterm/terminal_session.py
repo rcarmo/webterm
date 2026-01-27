@@ -173,6 +173,12 @@ class TerminalSession(Session):
         async with self._screen_lock:
             return [line.rstrip() for line in self._screen.display]
 
+    async def get_screen_has_changes(self) -> bool:
+        """Check if the screen has changed since the last snapshot."""
+        await self._sync_pyte_to_pty()
+        async with self._screen_lock:
+            return len(self._screen.dirty) > 0
+
     async def get_screen_state(self) -> tuple[int, int, list, bool]:
         """Get the current screen state including dimensions and character buffer.
 
