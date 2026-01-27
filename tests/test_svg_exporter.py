@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from textual_webterm.svg_exporter import (
     ANSI_COLORS,
     DEFAULT_BG,
@@ -16,102 +18,67 @@ from textual_webterm.svg_exporter import (
 class TestColorToHex:
     """Tests for _color_to_hex function."""
 
-    def test_default_foreground(self) -> None:
-        """Default color returns DEFAULT_FG for foreground."""
-        assert _color_to_hex("default", is_foreground=True) == DEFAULT_FG
-
-    def test_default_background(self) -> None:
-        """Default color returns DEFAULT_BG for background."""
-        assert _color_to_hex("default", is_foreground=False) == DEFAULT_BG
-
-    def test_hex_color_passthrough(self) -> None:
-        """Hex colors pass through unchanged."""
-        assert _color_to_hex("#ff0000") == "#ff0000"
-        assert _color_to_hex("#123456") == "#123456"
-        assert _color_to_hex("#AABBCC") == "#AABBCC"
-
-    def test_hex_color_without_hash(self) -> None:
-        """Hex colors without # prefix (pyte's 256-color/truecolor) get # added."""
-        assert _color_to_hex("ff0000") == "#ff0000"
-        assert _color_to_hex("123456") == "#123456"
-        assert _color_to_hex("AABBCC") == "#AABBCC"
-        assert _color_to_hex("ff8700") == "#ff8700"  # Common 256-color orange
-
-    def test_named_colors(self) -> None:
-        """Named ANSI colors map correctly."""
-        assert _color_to_hex("red") == ANSI_COLORS["red"]
-        assert _color_to_hex("green") == ANSI_COLORS["green"]
-        assert _color_to_hex("blue") == ANSI_COLORS["blue"]
-        assert _color_to_hex("white") == ANSI_COLORS["white"]
-        assert _color_to_hex("black") == ANSI_COLORS["black"]
-
-    def test_bright_colors(self) -> None:
-        """Bright color variants map correctly."""
-        assert _color_to_hex("brightred") == ANSI_COLORS["brightred"]
-        assert _color_to_hex("brightgreen") == ANSI_COLORS["brightgreen"]
-        assert _color_to_hex("brightblue") == ANSI_COLORS["brightblue"]
-
-    def test_case_insensitive(self) -> None:
-        """Color names are case-insensitive."""
-        assert _color_to_hex("RED") == ANSI_COLORS["red"]
-        assert _color_to_hex("Green") == ANSI_COLORS["green"]
-        assert _color_to_hex("BRIGHTBLUE") == ANSI_COLORS["brightblue"]
-
-    def test_unknown_color_returns_default(self) -> None:
-        """Unknown color names return default."""
-        assert _color_to_hex("unknowncolor", is_foreground=True) == DEFAULT_FG
-        assert _color_to_hex("unknowncolor", is_foreground=False) == DEFAULT_BG
-
-    def test_rgb_format_returns_default(self) -> None:
-        """RGB format falls back to default (not commonly used in terminals)."""
-        assert _color_to_hex("rgb(255,0,0)", is_foreground=True) == DEFAULT_FG
-        assert _color_to_hex("rgb(0,255,0)", is_foreground=False) == DEFAULT_BG
-
-    def test_gray_aliases(self) -> None:
-        """Gray/grey aliases work."""
-        assert _color_to_hex("gray") == ANSI_COLORS["gray"]
-        assert _color_to_hex("grey") == ANSI_COLORS["grey"]
-        assert _color_to_hex("lightgray") == ANSI_COLORS["lightgray"]
-        assert _color_to_hex("lightgrey") == ANSI_COLORS["lightgrey"]
+    @pytest.mark.parametrize(
+        ("color", "is_foreground", "expected"),
+        [
+            ("default", True, DEFAULT_FG),
+            ("default", False, DEFAULT_BG),
+            ("#ff0000", True, "#ff0000"),
+            ("#123456", True, "#123456"),
+            ("#AABBCC", True, "#AABBCC"),
+            ("ff0000", True, "#ff0000"),
+            ("123456", True, "#123456"),
+            ("AABBCC", True, "#AABBCC"),
+            ("ff8700", True, "#ff8700"),
+            ("red", True, ANSI_COLORS["red"]),
+            ("green", True, ANSI_COLORS["green"]),
+            ("blue", True, ANSI_COLORS["blue"]),
+            ("white", True, ANSI_COLORS["white"]),
+            ("black", True, ANSI_COLORS["black"]),
+            ("brightred", True, ANSI_COLORS["brightred"]),
+            ("brightgreen", True, ANSI_COLORS["brightgreen"]),
+            ("brightblue", True, ANSI_COLORS["brightblue"]),
+            ("RED", True, ANSI_COLORS["red"]),
+            ("Green", True, ANSI_COLORS["green"]),
+            ("BRIGHTBLUE", True, ANSI_COLORS["brightblue"]),
+            ("unknowncolor", True, DEFAULT_FG),
+            ("unknowncolor", False, DEFAULT_BG),
+            ("rgb(255,0,0)", True, DEFAULT_FG),
+            ("rgb(0,255,0)", False, DEFAULT_BG),
+            ("gray", True, ANSI_COLORS["gray"]),
+            ("grey", True, ANSI_COLORS["grey"]),
+            ("lightgray", True, ANSI_COLORS["lightgray"]),
+            ("lightgrey", True, ANSI_COLORS["lightgrey"]),
+        ],
+    )
+    def test_color_to_hex(self, color: str, is_foreground: bool, expected: str) -> None:
+        """Color conversion covers named/hex/default cases."""
+        assert _color_to_hex(color, is_foreground=is_foreground) == expected
 
 
 class TestEscapeXml:
     """Tests for XML escaping."""
 
-    def test_no_special_chars(self) -> None:
-        """Plain text passes through unchanged."""
-        assert _escape_xml("hello world") == "hello world"
-
-    def test_less_than(self) -> None:
-        """Less than is escaped."""
-        assert _escape_xml("<") == "&lt;"
-        assert _escape_xml("a < b") == "a &lt; b"
-
-    def test_greater_than(self) -> None:
-        """Greater than is escaped."""
-        assert _escape_xml(">") == "&gt;"
-        assert _escape_xml("a > b") == "a &gt; b"
-
-    def test_ampersand(self) -> None:
-        """Ampersand is escaped."""
-        assert _escape_xml("&") == "&amp;"
-        assert _escape_xml("a & b") == "a &amp; b"
-
-    def test_quotes(self) -> None:
-        """Quotes are escaped."""
-        assert _escape_xml('"') == "&quot;"
-        assert _escape_xml("'") == "&#x27;"
-
-    def test_mixed_special_chars(self) -> None:
-        """Multiple special chars are all escaped."""
-        assert _escape_xml('<script>"alert"</script>') == (
-            "&lt;script&gt;&quot;alert&quot;&lt;/script&gt;"
-        )
-
-    def test_unicode_preserved(self) -> None:
-        """Unicode characters are preserved."""
-        assert _escape_xml("你好世界") == "你好世界"
-        assert _escape_xml("🎉🚀") == "🎉🚀"
+    @pytest.mark.parametrize(
+        ("input_str", "expected"),
+        [
+            ("hello world", "hello world"),
+            ("<", "&lt;"),
+            ("a < b", "a &lt; b"),
+            (">", "&gt;"),
+            ("a > b", "a &gt; b"),
+            ("&", "&amp;"),
+            ("a & b", "a &amp; b"),
+            ('"', "&quot;"),
+            ("'", "&#x27;"),
+            ('<script>"alert"</script>', "&lt;script&gt;&quot;alert&quot;&lt;/script&gt;"),
+            ("你好世界", "你好世界"),
+            ("🎉🚀", "🎉🚀"),
+        ],
+    )
+    def test_escape_xml(self, input_str: str, expected: str) -> None:
+        """Escape XML special chars and preserve unicode."""
+        assert _escape_xml(input_str) == expected
 
 
 class TestRenderTerminalSvg:

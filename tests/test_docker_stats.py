@@ -66,6 +66,20 @@ class TestRenderSparklineSvg:
 class TestDockerStatsCollector:
     """Tests for Docker stats collector."""
 
+    @pytest.fixture
+    def cpu_stats_pair(self):
+        return (
+            {
+                "cpu_usage": {"total_usage": 1000000000},
+                "system_cpu_usage": 10000000000,
+                "online_cpus": 4,
+            },
+            {
+                "cpu_usage": {"total_usage": 500000000},
+                "system_cpu_usage": 5000000000,
+            },
+        )
+
     def test_available_checks_socket(self, tmp_path):
         """available property checks socket existence and connectivity."""
         socket_path = tmp_path / "docker.sock"
@@ -94,19 +108,11 @@ class TestDockerStatsCollector:
         history = collector.get_cpu_history("test")
         assert history == [10.0, 20.0, 30.0]
 
-    def test_calculate_cpu_percent(self):
+    def test_calculate_cpu_percent(self, cpu_stats_pair):
         """CPU percentage calculation."""
         collector = DockerStatsCollector("/nonexistent")
 
-        cpu_stats = {
-            "cpu_usage": {"total_usage": 1000000000},
-            "system_cpu_usage": 10000000000,
-            "online_cpus": 4,
-        }
-        precpu_stats = {
-            "cpu_usage": {"total_usage": 500000000},
-            "system_cpu_usage": 5000000000,
-        }
+        cpu_stats, precpu_stats = cpu_stats_pair
 
         result = collector._calculate_cpu_percent("test", cpu_stats, precpu_stats)
         assert result is not None

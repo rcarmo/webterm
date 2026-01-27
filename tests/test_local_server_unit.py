@@ -174,20 +174,16 @@ class TestLocalServerHelpers:
         ws.send_json.assert_awaited_once_with(["error", "No app configured"])
 
     @pytest.mark.asyncio
-    async def test_screenshot_svg_handler_returns_svg(self, server, monkeypatch, capsys):
-        request = MagicMock()
+    async def test_screenshot_svg_handler_returns_svg(
+        self, server, monkeypatch, capsys, screen_buffer_factory, mock_session, mock_request
+    ):
+        request = mock_request
         request.query = {"route_key": "rk"}
 
-        # Mock screen state: width=80, height=2, buffer with "hello" on first line
-        screen_buffer = [
-            [{"data": c, "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False} for c in "hello" + " " * 75],
-            [{"data": " ", "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False}] * 80,
-        ]
-        session = MagicMock()
-        session.get_screen_has_changes = AsyncMock(return_value=False)
-        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
+        screen_buffer = screen_buffer_factory(["hello", ""])
+        mock_session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
 
-        monkeypatch.setattr(server.session_manager, "get_session_by_route_key", lambda _rk: session)
+        monkeypatch.setattr(server.session_manager, "get_session_by_route_key", lambda _rk: mock_session)
 
         response = await server._handle_screenshot(request)
         assert response.content_type == "image/svg+xml"
@@ -198,18 +194,14 @@ class TestLocalServerHelpers:
         assert out.err == ""
 
     @pytest.mark.asyncio
-    async def test_screenshot_creates_session_for_known_slug(self, server, monkeypatch):
-        request = MagicMock()
+    async def test_screenshot_creates_session_for_known_slug(
+        self, server, monkeypatch, screen_buffer_factory, mock_session, mock_request
+    ):
+        request = mock_request
         request.query = {"route_key": "known"}
 
-        # Mock screen state
-        screen_buffer = [
-            [{"data": c, "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False} for c in "world" + " " * 75],
-            [{"data": " ", "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False}] * 80,
-        ]
-        session = MagicMock()
-        session.get_screen_has_changes = AsyncMock(return_value=False)
-        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
+        screen_buffer = screen_buffer_factory(["world", ""])
+        mock_session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
 
         # Pretend app exists for slug "known"
         server.session_manager.apps_by_slug["known"] = App(
@@ -230,7 +222,7 @@ class TestLocalServerHelpers:
         monkeypatch.setattr(
             server.session_manager,
             "get_session_by_route_key",
-            lambda _rk: session if created else None,
+            lambda _rk: mock_session if created else None,
         )
 
         response = await server._handle_screenshot(request)
@@ -241,8 +233,8 @@ class TestLocalServerHelpers:
         assert created["called"][1:] == (132, 45)
 
     @pytest.mark.asyncio
-    async def test_screenshot_returns_404_for_unknown_slug(self, server, monkeypatch):
-        request = MagicMock()
+    async def test_screenshot_returns_404_for_unknown_slug(self, server, monkeypatch, mock_request):
+        request = mock_request
         request.query = {"route_key": "unknown"}
 
         monkeypatch.setattr(server.session_manager, "get_session_by_route_key", lambda _rk: None)
@@ -282,89 +274,72 @@ class TestLocalServerHelpers:
             port=8080,
         )
 
-    def test_get_ws_url_basic(self, server):
-        """Test basic WebSocket URL generation."""
-        request = MagicMock()
-        request.headers = {"Host": "localhost:8080"}
-        request.secure = False
+    @pytest.mark.parametrize(
+        ("headers", "secure", "expected_parts", "forbidden_parts"),
+        [
+            ({"Host": "localhost:8080"}, False, ("ws://", "test-route"), ()),
+            ({"Host": "localhost:8080", "X-Forwarded-Proto": "https"}, True, ("wss://",), ()),
+            (
+                {
+                    "Host": "localhost:8080",
+                    "X-Forwarded-Host": "example.com",
+                    "X-Forwarded-Proto": "https",
+                },
+                False,
+                ("example.com",),
+                (),
+            ),
+            (
+                {
+                    "Host": "localhost:8080",
+                    "X-Forwarded-Host": "example.com",
+                    "X-Forwarded-Port": "9000",
+                },
+                False,
+                ("9000",),
+                (),
+            ),
+            (
+                {
+                    "Host": "example.com",
+                    "X-Forwarded-Port": "443",
+                    "X-Forwarded-Proto": "https",
+                },
+                True,
+                ("wss://example.com/ws/test-route",),
+                (":443",),
+            ),
+        ],
+    )
+    def test_get_ws_url_variants(self, server, mock_request, headers, secure, expected_parts, forbidden_parts):
+        """Test WebSocket URL generation variants."""
+        request = mock_request
+        request.headers = headers
+        request.secure = secure
 
         url = server._get_ws_url_from_request(request, "test-route")
-        assert "ws://" in url
-        assert "test-route" in url
-
-    def test_get_ws_url_secure(self, server):
-        """Test secure WebSocket URL generation."""
-        request = MagicMock()
-        request.headers = {"Host": "localhost:8080", "X-Forwarded-Proto": "https"}
-        request.secure = True
-
-        url = server._get_ws_url_from_request(request, "test-route")
-        assert "wss://" in url
-
-    def test_get_ws_url_forwarded_host(self, server):
-        """Test WebSocket URL with forwarded host."""
-        request = MagicMock()
-        request.headers = {
-            "Host": "localhost:8080",
-            "X-Forwarded-Host": "example.com",
-            "X-Forwarded-Proto": "https",
-        }
-        request.secure = False
-
-        url = server._get_ws_url_from_request(request, "test-route")
-        assert "example.com" in url
-
-    def test_get_ws_url_forwarded_port(self, server):
-        """Test WebSocket URL with forwarded port."""
-        request = MagicMock()
-        request.headers = {
-            "Host": "localhost:8080",
-            "X-Forwarded-Host": "example.com",
-            "X-Forwarded-Port": "9000",
-        }
-        request.secure = False
-
-        url = server._get_ws_url_from_request(request, "test-route")
-        assert "9000" in url
-
-    def test_get_ws_url_standard_port_omitted(self, server):
-        """Test that standard ports are omitted from URL."""
-        request = MagicMock()
-        request.headers = {
-            "Host": "example.com",
-            "X-Forwarded-Port": "443",
-            "X-Forwarded-Proto": "https",
-        }
-        request.secure = True
-
-        url = server._get_ws_url_from_request(request, "test-route")
-        # Port 443 should be omitted
-        assert ":443" not in url or url == "wss://example.com/ws/test-route"
+        for part in expected_parts:
+            assert part in url
+        for part in forbidden_parts:
+            assert part not in url
 
 
 class TestWebSocketProtocol:
     """Tests for WebSocket protocol message formats."""
 
-    def test_stdin_message_format(self):
-        """Test stdin message format."""
-        msg = ["stdin", "hello"]
-        assert msg[0] == "stdin"
-        assert msg[1] == "hello"
-
-    def test_resize_message_format(self):
-        """Test resize message format."""
-        msg = ["resize", {"width": 80, "height": 24}]
-        assert msg[0] == "resize"
-        assert msg[1]["width"] == 80
-        assert msg[1]["height"] == 24
-
-    def test_ping_pong_format(self):
-        """Test ping/pong message format."""
-        ping = ["ping", "1234567890"]
-        pong = ["pong", "1234567890"]
-        assert ping[0] == "ping"
-        assert pong[0] == "pong"
-        assert ping[1] == pong[1]
+    @pytest.mark.parametrize(
+        ("msg_type", "payload", "assertions"),
+        [
+            ("stdin", "hello", lambda msg: msg[1] == "hello"),
+            ("resize", {"width": 80, "height": 24}, lambda msg: msg[1]["width"] == 80),
+            ("ping", "1234567890", lambda msg: msg[0] == "ping"),
+        ],
+    )
+    def test_message_format(self, msg_type, payload, assertions):
+        """Test message formats."""
+        msg = [msg_type, payload]
+        assert msg[0] == msg_type
+        assert assertions(msg)
 
 
 class TestLocalServerMoreCoverage:
@@ -390,20 +365,20 @@ class TestLocalServerMoreCoverage:
         await server_with_no_apps.handle_session_data("rk", b"data")
 
     @pytest.mark.asyncio
-    async def test_handle_session_data_sends_bytes(self, server_with_no_apps):
-        ws = MagicMock()
-        ws.send_bytes = AsyncMock()
-        server_with_no_apps._websocket_connections["rk"] = ws
-        await server_with_no_apps.handle_session_data("rk", b"data")
-        ws.send_bytes.assert_awaited_once_with(b"data")
-
     @pytest.mark.asyncio
-    async def test_handle_binary_message_sends_bytes(self, server_with_no_apps):
+    @pytest.mark.parametrize(
+        ("handler", "payload"),
+        [
+            ("handle_session_data", b"data"),
+            ("handle_binary_message", b"bin"),
+        ],
+    )
+    async def test_handle_message_sends_bytes(self, server_with_no_apps, handler, payload):
         ws = MagicMock()
         ws.send_bytes = AsyncMock()
         server_with_no_apps._websocket_connections["rk"] = ws
-        await server_with_no_apps.handle_binary_message("rk", b"bin")
-        ws.send_bytes.assert_awaited_once_with(b"bin")
+        await getattr(server_with_no_apps, handler)("rk", payload)
+        ws.send_bytes.assert_awaited_once_with(payload)
 
     @pytest.mark.asyncio
     async def test_handle_session_close_ends_session_and_closes_ws(self, server_with_no_apps, monkeypatch):
@@ -624,16 +599,14 @@ class TestLocalServerMoreCoverage:
         assert created is True
 
     @pytest.mark.asyncio
-    async def test_handle_screenshot_uses_cached_when_no_changes(self, server_with_no_apps, monkeypatch):
-        session = MagicMock()
-        session.get_screen_has_changes = AsyncMock(return_value=False)
-        session.get_screen_state = AsyncMock(return_value=(80, 24, [], False))
-        monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
+    async def test_handle_screenshot_uses_cached_when_no_changes(
+        self, server_with_no_apps, monkeypatch, mock_request, mock_session
+    ):
+        mock_session.get_screen_state = AsyncMock(return_value=(80, 24, [], False))
+        monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: mock_session)
 
-        request = MagicMock()
+        request = mock_request
         request.query = {"route_key": "rk"}
-        request.headers = {}
-        request.secure = False
 
         # Seed cache
         server_with_no_apps._screenshot_cache["rk"] = (0.0, "<svg></svg>")
@@ -641,31 +614,26 @@ class TestLocalServerMoreCoverage:
 
         resp = await server_with_no_apps._handle_screenshot(request)
         assert resp.text == "<svg></svg>"
-        session.get_screen_state.assert_not_awaited()
+        mock_session.get_screen_state.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_handle_screenshot_uses_screen_state(self, server_with_no_apps, monkeypatch):
+    async def test_handle_screenshot_uses_screen_state(
+        self, server_with_no_apps, monkeypatch, screen_buffer_factory, mock_request, mock_session
+    ):
         """Test that screenshot uses get_screen_state for rendering."""
-        request = MagicMock()
+        request = mock_request
         request.query = {"route_key": "rk"}
-        request.headers = {}
 
-        # Mock screen state
-        screen_buffer = [
-            [{"data": c, "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False} for c in "line1" + " " * 75],
-            [{"data": c, "fg": "default", "bg": "default", "bold": False, "italics": False, "underscore": False, "reverse": False} for c in "line2" + " " * 75],
-        ]
-        session = MagicMock()
-        session.get_screen_has_changes = AsyncMock(return_value=False)
-        session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
-        monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: session)
+        screen_buffer = screen_buffer_factory(["line1", "line2"])
+        mock_session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
+        monkeypatch.setattr(server_with_no_apps.session_manager, "get_session_by_route_key", lambda _rk: mock_session)
 
         server_with_no_apps._route_last_activity["rk"] = 1.0
 
         resp = await server_with_no_apps._handle_screenshot(request)
         assert resp.content_type == "image/svg+xml"
         assert "<svg" in resp.text
-        session.get_screen_state.assert_awaited_once()
+        mock_session.get_screen_state.assert_awaited_once()
 
     def test_notify_activity_pushes_to_subscribers(self, server_with_no_apps):
         """Test that activity notifications are pushed to SSE subscribers."""

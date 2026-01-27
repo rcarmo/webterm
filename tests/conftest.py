@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -46,6 +47,46 @@ def sample_config(sample_terminal_app: App) -> Config:
 def tmp_config_path(tmp_path: Path) -> Path:
     """Create a temporary config path."""
     return tmp_path / "config"
+
+
+@pytest.fixture
+def mock_request() -> MagicMock:
+    """Create a mock request with common attributes."""
+    request = MagicMock()
+    request.headers = {}
+    request.secure = False
+    request.query = {}
+    return request
+
+
+@pytest.fixture
+def screen_buffer_factory():
+    def _make(rows: list[str], width: int = 80):
+        return [
+            [
+                {
+                    "data": c,
+                    "fg": "default",
+                    "bg": "default",
+                    "bold": False,
+                    "italics": False,
+                    "underscore": False,
+                    "reverse": False,
+                }
+                for c in (row + " " * width)[:width]
+            ]
+            for row in rows
+        ]
+
+    return _make
+
+
+@pytest.fixture
+def mock_session():
+    session = MagicMock()
+    session.get_screen_has_changes = AsyncMock(return_value=False)
+    session.get_screen_state = AsyncMock(return_value=(80, 24, [], True))
+    return session
 
 
 @pytest.fixture
