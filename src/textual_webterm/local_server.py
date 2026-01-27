@@ -366,11 +366,13 @@ class LocalServer:
         self._websocket_connections[route_key] = ws
 
         session_id = self.session_manager.routes.get(RouteKey(route_key))
+        session = None
         if session_id is not None:
             session = self.session_manager.get_session(session_id)
             if session is None or not session.is_running():
                 self.session_manager.on_session_end(session_id)
                 session_id = None
+                session = None
             else:
                 # Force terminal redraw on reconnect to avoid blank screen
                 if hasattr(session, 'force_redraw'):
@@ -378,7 +380,13 @@ class LocalServer:
                 if hasattr(session, 'send_bytes'):
                     await session.send_bytes(CLEAR_AND_REDRAW_SEQ.encode('utf-8'))
 
+
         session_created = session_id is not None
+
+        if session_created and session is not None and hasattr(session, 'get_replay_buffer'):
+            replay = await session.get_replay_buffer()
+            if replay:
+                await ws.send_bytes(replay)
 
         try:
             async for msg in ws:
@@ -853,12 +861,14 @@ class LocalServer:
         return web.Response(text=html_content, content_type="text/html")
 
     async def handle_session_data(self, route_key: RouteKey, data: bytes) -> None:
+        self.mark_route_activity(str(route_key))
         ws = self._websocket_connections.get(route_key)
         if ws is None:
             return
         await ws.send_bytes(data)
 
     async def handle_binary_message(self, route_key: RouteKey, payload: bytes) -> None:
+        self.mark_route_activity(str(route_key))
         ws = self._websocket_connections.get(route_key)
         if ws is None:
             return

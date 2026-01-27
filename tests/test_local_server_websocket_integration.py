@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import WSMsgType, web
@@ -59,9 +60,16 @@ async def test_websocket_creates_session_on_resize(tmp_path):
     server.session_manager.routes["test"] = "sid"
     server.session_manager.sessions["sid"] = DummySession()
 
+    # Replay buffer should be sent on reconnect
+    replay_session = server.session_manager.sessions["sid"]
+    replay_session.get_replay_buffer = AsyncMock(return_value=b"replay")
+
     client = await _make_client(server)
     try:
         ws = await client.ws_connect("/ws/test")
+        msg = await ws.receive(timeout=1)
+        assert msg.type == WSMsgType.BINARY
+        assert msg.data == b"replay"
         await ws.close()
     finally:
         await client.close()
