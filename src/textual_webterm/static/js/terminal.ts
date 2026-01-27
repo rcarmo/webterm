@@ -190,7 +190,13 @@ class WebTerminal {
         const maxAttempts = 120;
 
         const attemptFitAndResize = (attempt: number) => {
-          const dims = this.fitAddon.proposeDimensions();
+          const dims = (() => {
+            try {
+              return this.fitAddon.proposeDimensions();
+            } catch {
+              return undefined;
+            }
+          })();
           if (!dims) {
             if (attempt < maxAttempts) {
               window.requestAnimationFrame(() => attemptFitAndResize(attempt + 1));
