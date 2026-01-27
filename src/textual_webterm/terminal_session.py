@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("textual-web")
 
 # Maximum bytes to keep in replay buffer for reconnection
-REPLAY_BUFFER_SIZE = 64 * 1024  # 64KB
+REPLAY_BUFFER_SIZE = 256 * 1024  # 256KB
 
 # Default screen size for pyte emulator
 DEFAULT_SCREEN_WIDTH = 132

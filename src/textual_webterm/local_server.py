@@ -33,6 +33,8 @@ DEFAULT_TERMINAL_SIZE = (132, 45)
 
 SCREENSHOT_CACHE_SECONDS = 0.3
 SCREENSHOT_MAX_CACHE_SECONDS = 20.0
+CLEAR_AND_REDRAW_SEQ = "\x0c"  # Ctrl+L: clear and redraw
+
 
 WEBTERM_STATIC_PATH = Path(__file__).parent / "static"
 
@@ -369,6 +371,12 @@ class LocalServer:
             if session is None or not session.is_running():
                 self.session_manager.on_session_end(session_id)
                 session_id = None
+            else:
+                # Force terminal redraw on reconnect to avoid blank screen
+                if hasattr(session, 'force_redraw'):
+                    await session.force_redraw()
+                if hasattr(session, 'send_bytes'):
+                    await session.send_bytes(CLEAR_AND_REDRAW_SEQ.encode('utf-8'))
 
         session_created = session_id is not None
 

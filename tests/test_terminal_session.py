@@ -29,7 +29,7 @@ class TestTerminalSession:
         """Test replay buffer size constant."""
         from textual_webterm.terminal_session import REPLAY_BUFFER_SIZE
 
-        assert REPLAY_BUFFER_SIZE == 64 * 1024  # 64KB
+        assert REPLAY_BUFFER_SIZE == 256 * 1024  # 64KB
 
     def test_init(self):
         """Test TerminalSession initialization."""

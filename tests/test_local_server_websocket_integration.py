@@ -43,6 +43,32 @@ async def test_websocket_creates_session_on_resize(tmp_path):
         await client.close()
 
     assert created["args"] == ("test", 90, 25)
+    # Reconnect should trigger redraw without creating a new session
+    called = {"redraw": 0, "stdin": 0}
+
+    class DummySession:
+        def is_running(self):
+            return True
+
+        async def force_redraw(self):
+            called["redraw"] += 1
+
+        async def send_bytes(self, data: bytes):
+            called["stdin"] += 1
+
+    server.session_manager.routes["test"] = "sid"
+    server.session_manager.sessions["sid"] = DummySession()
+
+    client = await _make_client(server)
+    try:
+        ws = await client.ws_connect("/ws/test")
+        await ws.close()
+    finally:
+        await client.close()
+
+    assert called["redraw"] == 1
+    assert called["stdin"] == 1
+
 
 
 @pytest.mark.asyncio
