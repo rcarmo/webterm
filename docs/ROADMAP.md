@@ -411,9 +411,11 @@ This section compares the Python **pyte** terminal emulator and the Go **GoPyte*
 | **Alt screen** | Supported | Supported (claims) | Full-screen apps depend on correct switching. |
 | **Scrollback/history** | HistoryScreen (configurable) | Built-in scrollback (claims) | Semantics may differ; check memory cost. |
 | **Resize behavior** | Resizes + cursor + dirty state | Resizes + content (claims) | Must preserve content on resize. |
-| **SGR attributes** | Bold/underline/reverse/color | SGR attrs (claims) | Verify italics, faint, strikethrough. |
+| **SGR attributes** | Bold/underline/reverse/color | SGR attrs (claims) | Verify italics, faint, strikethrough, blink. |
 | **Underline styles** | Basic underline | Unknown | Double/curly underline may be missing. |
 | **Color depth** | ANSI + 256 + (truecolor in practice) | ANSI + 256? (verify) | Truecolor required for accurate screenshots. |
+| **Default colors** | SGR 39/49 respected | Unknown | Default fg/bg must be stable. |
+| **Reverse video** | Supported | Unknown | Affects screenshot accuracy. |
 | **DEC special graphics** | Supported (line drawing) | Unknown | Box-drawing is critical for TUIs. |
 | **Character sets (G0/G1)** | Supported | Unknown | Needed for legacy line-drawing. |
 | **Scroll regions** | Supported | Unknown | Needed for curses-style UI. |
@@ -422,7 +424,8 @@ This section compares the Python **pyte** terminal emulator and the Go **GoPyte*
 | **Autowrap/origin modes** | Supported | Unknown | Impacts cursor positioning and layout. |
 | **Cursor save/restore** | Supported | Unknown | Common in TUIs and prompts. |
 | **Cursor visibility/style** | Basic visibility | Unknown | Useful for accurate snapshots. |
-| **Erase semantics (ED/EL)** | Supported | Unknown | Correct clearing is vital for screenshots. |
+| **Erase semantics (ED/EL/ECH)** | Supported | Unknown | Correct clearing is vital for screenshots. |
+| **Selective erase (DECSEL/DECSERA)** | Unknown | Unknown | Might matter for some TUIs. |
 | **Unicode width** | wcwidth-style width | go-runewidth | Width differences can misalign SVG. |
 | **Combining marks / ZWJ** | Unicode-aware | runewidth-based | Emoji sequences may differ in width. |
 | **Dirty tracking** | Exposes dirty set / DiffScreen | Unknown | Needed for efficient screenshot caching. |
@@ -469,7 +472,7 @@ We depend on the emulator for **accurate snapshot state**, not just live display
 - **Dirty tracking or diffability** to avoid re-rendering unchanged screens.
 - Reliable **color mapping** (ANSI 16 + 256 + truecolor).
 - Correct **DEC line drawing** (box-drawing characters).
-- Correct **erase semantics** (ED/EL) to avoid stale cells.
+- Correct **erase semantics** (ED/EL/ECH) to avoid stale cells.
 
 If any of these are missing, screenshots will be wrong or expensive to compute.
 
@@ -478,6 +481,7 @@ If any of these are missing, screenshots will be wrong or expensive to compute.
 These aren’t required for parity, but would improve capture quality or UX:
 
 - **OSC 8 hyperlink metadata** to annotate clickable URLs in SVG output.
+- **OSC 52 clipboard** metadata for copy workflows.
 - **Underline styles** (double/curly) for richer text attributes.
 - **Cursor style/shape** metadata for accurate snapshots.
 - **Grapheme cluster awareness** (emoji sequences treated as single cells).
@@ -494,10 +498,11 @@ Before relying on GoPyte for parity, verify:
 - [ ] Insert/delete line/char (IL/DL/ICH/DCH) correctness.
 - [ ] Tab stops and tab clear (alignment in TUIs).
 - [ ] SGR coverage: bold/underline/italic/reverse + 256/truecolor.
-- [ ] Underline styles, faint, strikethrough.
+- [ ] Underline styles, faint, strikethrough, blink.
+- [ ] Default colors (SGR 39/49) and reverse video.
 - [ ] Unicode width parity with pyte (emoji + CJK samples).
 - [ ] Cursor save/restore (DECSC/DECRC) and visibility toggles.
-- [ ] Erase semantics (ED/EL) and autowrap correctness.
+- [ ] Erase semantics (ED/EL/ECH) and autowrap correctness.
 - [ ] Resize correctness (content preservation, cursor placement).
 - [ ] Performance at high output rates (100k+ lines, low latency).
 
