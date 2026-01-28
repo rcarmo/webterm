@@ -181,7 +181,7 @@ class TestLocalServerHelpers:
         request.query = {"route_key": "rk"}
 
         screen_buffer = screen_buffer_factory(["hello", ""])
-        mock_session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
+        mock_session.get_screen_snapshot = AsyncMock(return_value=(80, 2, screen_buffer, True))
 
         monkeypatch.setattr(
             server.session_manager, "get_session_by_route_key", lambda _rk: mock_session
@@ -203,7 +203,7 @@ class TestLocalServerHelpers:
         request.query = {"route_key": "known"}
 
         screen_buffer = screen_buffer_factory(["world", ""])
-        mock_session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
+        mock_session.get_screen_snapshot = AsyncMock(return_value=(80, 2, screen_buffer, True))
 
         # Pretend app exists for slug "known"
         server.session_manager.apps_by_slug["known"] = App(
@@ -639,7 +639,7 @@ class TestLocalServerMoreCoverage:
     async def test_handle_screenshot_uses_cached_when_no_changes(
         self, server_with_no_apps, monkeypatch, mock_request, mock_session
     ):
-        mock_session.get_screen_state = AsyncMock(return_value=(80, 24, [], False))
+        mock_session.get_screen_snapshot = AsyncMock(return_value=(80, 24, [], False))
         monkeypatch.setattr(
             server_with_no_apps.session_manager,
             "get_session_by_route_key",
@@ -655,18 +655,17 @@ class TestLocalServerMoreCoverage:
 
         resp = await server_with_no_apps._handle_screenshot(request)
         assert resp.text == "<svg></svg>"
-        mock_session.get_screen_state.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_handle_screenshot_uses_screen_state(
         self, server_with_no_apps, monkeypatch, screen_buffer_factory, mock_request, mock_session
     ):
-        """Test that screenshot uses get_screen_state for rendering."""
+        """Test that screenshot uses get_screen_snapshot for rendering."""
         request = mock_request
         request.query = {"route_key": "rk"}
 
         screen_buffer = screen_buffer_factory(["line1", "line2"])
-        mock_session.get_screen_state = AsyncMock(return_value=(80, 2, screen_buffer, True))
+        mock_session.get_screen_snapshot = AsyncMock(return_value=(80, 2, screen_buffer, True))
         monkeypatch.setattr(
             server_with_no_apps.session_manager,
             "get_session_by_route_key",
@@ -678,7 +677,7 @@ class TestLocalServerMoreCoverage:
         resp = await server_with_no_apps._handle_screenshot(request)
         assert resp.content_type == "image/svg+xml"
         assert "<svg" in resp.text
-        mock_session.get_screen_state.assert_awaited_once()
+        mock_session.get_screen_snapshot.assert_awaited_once()
 
     def test_notify_activity_pushes_to_subscribers(self, server_with_no_apps):
         """Test that activity notifications are pushed to SSE subscribers."""

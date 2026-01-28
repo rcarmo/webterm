@@ -9,6 +9,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from webterm.terminal_session import (
+    REPLAY_BUFFER_SIZE,
+    TerminalSession,
+)
+
 # Skip tests on Windows
 pytestmark = pytest.mark.skipif(
     platform.system() == "Windows",
@@ -16,46 +21,38 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture
+def terminal_session(mock_poller):
+    """Create a TerminalSession for testing."""
+    return TerminalSession(mock_poller, "test-session", "bash")
+
+
 class TestTerminalSession:
     """Tests for TerminalSession class."""
 
     def test_import(self):
         """Test that module can be imported."""
-        from webterm.terminal_session import TerminalSession
-
         assert TerminalSession is not None
 
     def test_replay_buffer_size(self):
         """Test replay buffer size constant."""
-        from webterm.terminal_session import REPLAY_BUFFER_SIZE
+        assert REPLAY_BUFFER_SIZE == 256 * 1024
 
-        assert REPLAY_BUFFER_SIZE == 256 * 1024  # 64KB
-
-    def test_init(self):
+    def test_init(self, terminal_session):
         """Test TerminalSession initialization."""
-        from webterm.terminal_session import TerminalSession
+        assert terminal_session.session_id == "test-session"
+        assert terminal_session.command == "bash"
+        assert terminal_session.master_fd is None
+        assert terminal_session.pid is None
+        assert terminal_session._task is None
 
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        assert session.session_id == "test-session"
-        assert session.command == "bash"
-        assert session.master_fd is None
-        assert session.pid is None
-        assert session._task is None
-
-    def test_init_default_shell(self):
+    def test_init_default_shell(self, mock_poller):
         """Test that default shell is used when command is empty."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
         with patch.dict(os.environ, {"SHELL": "/bin/zsh"}):
             session = TerminalSession(mock_poller, "test-session", "")
             assert session.command == "/bin/zsh"
 
     def test_package_version_fallback(self):
-        from webterm.terminal_session import TerminalSession
-
         with (
             patch("webterm.terminal_session.version", side_effect=RuntimeError()),
             patch("webterm.terminal_session.PackageNotFoundError", RuntimeError),
@@ -63,188 +60,110 @@ class TestTerminalSession:
             assert TerminalSession._package_version() == "0.0.0"
 
     @pytest.mark.asyncio
-    async def test_replay_buffer_add(self):
+    async def test_replay_buffer_add(self, terminal_session):
         """Test adding data to replay buffer."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        await session._add_to_replay_buffer(b"test data")
-        assert session._replay_buffer_size == 9
-        assert await session.get_replay_buffer() == b"test data"
+        await terminal_session._add_to_replay_buffer(b"test data")
+        assert terminal_session._replay_buffer_size == 9
+        assert await terminal_session.get_replay_buffer() == b"test data"
 
     @pytest.mark.asyncio
-    async def test_replay_buffer_multiple_adds(self):
+    async def test_replay_buffer_multiple_adds(self, terminal_session):
         """Test adding multiple chunks to replay buffer."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        await session._add_to_replay_buffer(b"chunk1")
-        await session._add_to_replay_buffer(b"chunk2")
-        assert await session.get_replay_buffer() == b"chunk1chunk2"
+        await terminal_session._add_to_replay_buffer(b"chunk1")
+        await terminal_session._add_to_replay_buffer(b"chunk2")
+        assert await terminal_session.get_replay_buffer() == b"chunk1chunk2"
 
     @pytest.mark.asyncio
-    async def test_replay_buffer_overflow(self):
+    async def test_replay_buffer_overflow(self, terminal_session):
         """Test that replay buffer trims old data when exceeding limit."""
-        from webterm.terminal_session import (
-            REPLAY_BUFFER_SIZE,
-            TerminalSession,
-        )
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
         # Add more data than buffer size
         chunk_size = 1024
         for _i in range(100):  # 100KB total
-            await session._add_to_replay_buffer(b"x" * chunk_size)
+            await terminal_session._add_to_replay_buffer(b"x" * chunk_size)
 
         # Buffer should be trimmed
-        assert session._replay_buffer_size <= REPLAY_BUFFER_SIZE + chunk_size
+        assert terminal_session._replay_buffer_size <= REPLAY_BUFFER_SIZE + chunk_size
 
     @pytest.mark.asyncio
-    async def test_screen_state_updates_with_data(self):
+    async def test_screen_state_updates_with_data(self, terminal_session):
         """Test that pyte screen updates when data is received."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        # Feed some terminal data
-        await session._update_screen(b"Hello World\r\n")
-        lines = await session.get_screen_lines()
-
-        # First line should contain the text
+        await terminal_session._update_screen(b"Hello World\r\n")
+        lines = await terminal_session.get_screen_lines()
         assert "Hello World" in lines[0]
 
     @pytest.mark.asyncio
-    async def test_screen_handles_cursor_positioning(self):
+    async def test_screen_handles_cursor_positioning(self, terminal_session):
         """Test that pyte screen correctly handles cursor positioning (tmux-style)."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        # Feed content then reposition cursor and overwrite
-        await session._update_screen(b"Line 1\r\nLine 2\r\nLine 3\r\n")
+        await terminal_session._update_screen(b"Line 1\r\nLine 2\r\nLine 3\r\n")
         # Move cursor to line 2, column 1 and clear line, then write new content
-        await session._update_screen(b"\x1b[2;1H\x1b[KUpdated Line 2")
+        await terminal_session._update_screen(b"\x1b[2;1H\x1b[KUpdated Line 2")
 
-        lines = await session.get_screen_lines()
+        lines = await terminal_session.get_screen_lines()
 
         assert lines[0] == "Line 1"
         assert lines[1] == "Updated Line 2"
         assert lines[2] == "Line 3"
 
     @pytest.mark.asyncio
-    async def test_get_screen_state_returns_dirty_flag(self):
+    async def test_get_screen_state_returns_dirty_flag(self, terminal_session):
         """Test that get_screen_state returns has_changes flag based on pyte dirty tracking."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
         # After creation, all rows are dirty (initialized)
-        _w, _h, _buf, has_changes = await session.get_screen_state()
-        assert has_changes is True  # Initial state marks all rows dirty
+        _w, _h, _buf, has_changes = await terminal_session.get_screen_state()
+        assert has_changes is True
 
         # After getting state, dirty set is cleared
-        # Without new data, has_changes should be False
-        _, _, _, has_changes = await session.get_screen_state()
-        assert has_changes is False  # No changes since last call
+        _, _, _, has_changes = await terminal_session.get_screen_state()
+        assert has_changes is False
 
         # Feed new data
-        await session._update_screen(b"New content\r\n")
-        _, _, _, has_changes = await session.get_screen_state()
-        assert has_changes is True  # Screen was updated
+        await terminal_session._update_screen(b"New content\r\n")
+        _, _, _, has_changes = await terminal_session.get_screen_state()
+        assert has_changes is True
 
         # Check again without new data
-        _, _, _, has_changes = await session.get_screen_state()
-        assert has_changes is False  # No changes
+        _, _, _, has_changes = await terminal_session.get_screen_state()
+        assert has_changes is False
 
-    def test_update_connector(self):
+    def test_update_connector(self, terminal_session):
         """Test updating connector."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
         mock_connector = MagicMock()
-        session.update_connector(mock_connector)
-        assert session._connector == mock_connector
+        terminal_session.update_connector(mock_connector)
+        assert terminal_session._connector == mock_connector
 
-    def test_is_running_not_started(self):
+    def test_is_running_not_started(self, terminal_session):
         """Test is_running when session not started."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        assert session.is_running() is False
+        assert terminal_session.is_running() is False
 
     @pytest.mark.asyncio
-    async def test_send_bytes_no_fd(self):
+    async def test_send_bytes_no_fd(self, terminal_session):
         """Test send_bytes returns False when no master_fd."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        result = await session.send_bytes(b"test")
+        result = await terminal_session.send_bytes(b"test")
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_send_meta(self):
+    async def test_send_meta(self, terminal_session):
         """Test send_meta returns True."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        result = await session.send_meta({})
+        result = await terminal_session.send_meta({})
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_close_no_pid(self):
+    async def test_close_no_pid(self, terminal_session):
         """Test close when no pid."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        # Should not raise
-        await session.close()
+        await terminal_session.close()  # Should not raise
 
     @pytest.mark.asyncio
-    async def test_wait_no_task(self):
+    async def test_wait_no_task(self, terminal_session):
         """Test wait when no task."""
-        from webterm.terminal_session import TerminalSession
+        await terminal_session.wait()  # Should not raise
 
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        # Should not raise
-        await session.wait()
-
-    def test_repr(self):
+    def test_repr(self, terminal_session):
         """Test repr output."""
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
-        session = TerminalSession(mock_poller, "test-session", "bash")
-
-        repr_str = repr(session)
+        repr_str = repr(terminal_session)
         assert "test-session" in repr_str
         assert "bash" in repr_str
 
     @pytest.mark.asyncio
-    async def test_open_uses_shlex_split_and_execvp_with_args(self):
-        from webterm.terminal_session import TerminalSession
-
-        mock_poller = MagicMock()
+    async def test_open_uses_shlex_split_and_execvp_with_args(self, mock_poller):
         command = 'echo "hello world"'
         session = TerminalSession(mock_poller, "test-session", command)
 
@@ -270,11 +189,8 @@ class TestTerminalSession:
         mock_exit.assert_called_once_with(1)
 
     @pytest.mark.asyncio
-    async def test_open_parent_branch_sets_fd_and_pid(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
+    async def test_open_parent_branch_sets_fd_and_pid(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bash")
 
         with (
             patch("webterm.terminal_session.pty.fork", return_value=(1234, 99)),
@@ -287,11 +203,8 @@ class TestTerminalSession:
         set_size.assert_called_once_with(80, 24)
 
     @pytest.mark.asyncio
-    async def test_open_bad_command_exits(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bad")
+    async def test_open_bad_command_exits(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bad")
 
         with (
             patch("webterm.terminal_session.pty.fork", return_value=(pty.CHILD, 123)),
@@ -306,150 +219,160 @@ class TestTerminalSession:
         mock_exit.assert_called_once_with(1)
 
     @pytest.mark.asyncio
-    async def test_get_screen_lines_strips(self):
-        from webterm.terminal_session import TerminalSession
+    async def test_get_screen_lines_strips(self, terminal_session, dummy_lock):
+        terminal_session._screen = MagicMock()
+        terminal_session._screen.display = ["line  ", "next"]
+        terminal_session._screen_lock = dummy_lock
 
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
-        session._screen = MagicMock()
-        session._screen.display = ["line  ", "next"]
-
-        class DummyLock:
-            async def __aenter__(self):
-                return None
-
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-        session._screen_lock = DummyLock()
-
-        lines = await session.get_screen_lines()
+        lines = await terminal_session.get_screen_lines()
         assert lines == ["line", "next"]
 
     @pytest.mark.asyncio
-    async def test_get_screen_state_no_changes(self):
-        from webterm.terminal_session import TerminalSession
+    async def test_get_screen_state_no_changes(
+        self, terminal_session, dummy_lock, mock_screen_char
+    ):
+        terminal_session._screen = MagicMock()
+        terminal_session._screen.columns = 1
+        terminal_session._screen.lines = 1
+        terminal_session._screen.dirty = set()
+        terminal_session._screen.buffer = [[mock_screen_char()]]
+        terminal_session._sync_pyte_to_pty = AsyncMock()
+        terminal_session._screen_lock = dummy_lock
 
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
-        session._screen = MagicMock()
-        session._screen.columns = 1
-        session._screen.lines = 1
-        session._screen.dirty = set()
-        session._screen.buffer = [
-            [
-                MagicMock(
-                    data=" ", fg=0, bg=0, bold=False, italics=False, underscore=False, reverse=False
-                )
-            ]
-        ]
-        session._sync_pyte_to_pty = AsyncMock()
-
-        class DummyLock:
-            async def __aenter__(self):
-                return None
-
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-        session._screen_lock = DummyLock()
-
-        width, height, _buffer, changed = await session.get_screen_state()
+        width, height, _buffer, changed = await terminal_session.get_screen_state()
         assert width == 1
         assert height == 1
         assert changed is False
 
     @pytest.mark.asyncio
-    async def test_get_screen_state_clears_dirty(self):
-        from webterm.terminal_session import TerminalSession
+    async def test_get_screen_state_clears_dirty(
+        self, terminal_session, dummy_lock, mock_screen_char
+    ):
+        terminal_session._screen = MagicMock()
+        terminal_session._screen.columns = 2
+        terminal_session._screen.lines = 1
+        terminal_session._screen.dirty = {1}
+        terminal_session._screen.buffer = [[mock_screen_char("x"), mock_screen_char("y")]]
+        terminal_session._sync_pyte_to_pty = AsyncMock()
+        terminal_session._screen_lock = dummy_lock
 
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
-        session._screen = MagicMock()
-        session._screen.columns = 2
-        session._screen.lines = 1
-        session._screen.dirty = {1}
-        session._screen.buffer = [
-            [
-                MagicMock(
-                    data="x", fg=0, bg=0, bold=False, italics=False, underscore=False, reverse=False
-                ),
-                MagicMock(
-                    data="y", fg=0, bg=0, bold=False, italics=False, underscore=False, reverse=False
-                ),
-            ]
-        ]
-        session._sync_pyte_to_pty = AsyncMock()
-
-        class DummyLock:
-            async def __aenter__(self):
-                return None
-
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-        session._screen_lock = DummyLock()
-
-        width, height, _buffer, changed = await session.get_screen_state()
+        width, height, _buffer, changed = await terminal_session.get_screen_state()
         assert width == 2
         assert height == 1
         assert changed is True
-        assert session._screen.dirty == set()
+        assert terminal_session._screen.dirty == set()
 
     @pytest.mark.asyncio
-    async def test_get_screen_has_changes_reads_dirty(self):
-        from webterm.terminal_session import TerminalSession
+    async def test_get_screen_snapshot_does_not_mutate_state(
+        self, terminal_session, dummy_lock, mock_screen_char
+    ):
+        """Test that get_screen_snapshot doesn't call _sync_pyte_to_pty or clear dirty."""
+        terminal_session._screen = MagicMock()
+        terminal_session._screen.columns = 2
+        terminal_session._screen.lines = 1
+        terminal_session._screen.dirty = {0}
+        terminal_session._screen.buffer = [[mock_screen_char("a"), mock_screen_char("b")]]
+        terminal_session._sync_pyte_to_pty = AsyncMock()
+        terminal_session._screen_lock = dummy_lock
+        terminal_session._change_counter = 1
+        terminal_session._last_snapshot_counter = 0
 
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
-        session._screen = MagicMock()
-        session._screen.dirty = {1}
+        width, height, buffer, has_changes = await terminal_session.get_screen_snapshot()
 
-        class DummyLock:
-            async def __aenter__(self):
-                return None
+        # Verify dimensions and data returned correctly
+        assert width == 2
+        assert height == 1
+        assert has_changes is True
+        assert buffer[0][0]["data"] == "a"
+        assert buffer[0][1]["data"] == "b"
 
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
+        # Verify no mutation: _sync_pyte_to_pty not called, dirty not cleared
+        terminal_session._sync_pyte_to_pty.assert_not_awaited()
+        assert terminal_session._screen.dirty == {0}  # NOT cleared
 
-        session._screen_lock = DummyLock()
-        session._sync_pyte_to_pty = AsyncMock()
-
-        changed = await session.get_screen_has_changes()
-        assert changed is True
-        session._screen.dirty = set()
-        changed = await session.get_screen_has_changes()
-        assert changed is False
+        # Snapshot counter should be updated for change tracking
+        assert terminal_session._last_snapshot_counter == 1
 
     @pytest.mark.asyncio
-    async def test_send_bytes_handles_closed_fd(self):
-        from webterm.terminal_session import TerminalSession
+    async def test_get_screen_snapshot_tracks_changes_correctly(self, terminal_session, dummy_lock):
+        """Test that repeated snapshots correctly track changes."""
+        terminal_session._screen_lock = dummy_lock
+        terminal_session._change_counter = 5
+        terminal_session._last_snapshot_counter = 5
 
-        poller = MagicMock()
-        poller.write = AsyncMock(side_effect=KeyError)
-        session = TerminalSession(poller, "sid", "bash")
+        # No changes since last snapshot
+        _, _, _, has_changes = await terminal_session.get_screen_snapshot()
+        assert has_changes is False
+
+        # Simulate new screen data
+        terminal_session._change_counter = 6
+        _, _, _, has_changes = await terminal_session.get_screen_snapshot()
+        assert has_changes is True
+        assert terminal_session._last_snapshot_counter == 6
+
+    @pytest.mark.asyncio
+    async def test_update_screen_increments_change_counter(self, terminal_session):
+        """Test that _update_screen increments change counter when screen changes."""
+        initial_counter = terminal_session._change_counter
+
+        # Feed data that will mark screen as dirty
+        await terminal_session._update_screen(b"Hello\r\n")
+
+        assert terminal_session._change_counter > initial_counter
+
+    @pytest.mark.asyncio
+    async def test_set_terminal_size_increments_change_counter(self, terminal_session, mock_poller):
+        """Test that set_terminal_size increments change counter."""
+        terminal_session.master_fd = 10
+        initial_counter = terminal_session._change_counter
+
+        loop = asyncio.get_running_loop()
+        with patch.object(loop, "run_in_executor", new=AsyncMock()):
+            await terminal_session.set_terminal_size(100, 50)
+
+        assert terminal_session._change_counter == initial_counter + 1
+
+    @pytest.mark.asyncio
+    async def test_get_screen_has_changes_uses_change_counter(self, terminal_session, dummy_lock):
+        """Test that get_screen_has_changes uses the change counter."""
+        terminal_session._screen_lock = dummy_lock
+
+        # Initially no changes
+        terminal_session._change_counter = 0
+        terminal_session._last_snapshot_counter = 0
+        assert await terminal_session.get_screen_has_changes() is False
+
+        # After screen update increments counter
+        terminal_session._change_counter = 1
+        assert await terminal_session.get_screen_has_changes() is True
+
+        # After snapshot resets detection
+        terminal_session._last_snapshot_counter = 1
+        assert await terminal_session.get_screen_has_changes() is False
+
+    @pytest.mark.asyncio
+    async def test_send_bytes_handles_closed_fd(self, mock_poller):
+        mock_poller.write = AsyncMock(side_effect=KeyError)
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.master_fd = 10
 
         ok = await session.send_bytes(b"test")
         assert ok is False
 
     @pytest.mark.asyncio
-    async def test_run_reads_from_poller_and_closes(self):
-        from webterm.terminal_session import TerminalSession
-
+    async def test_run_reads_from_poller_and_closes(self, mock_poller):
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         await queue.put(b"hello")
         await queue.put(None)
 
-        poller = MagicMock()
-        poller.add_file = MagicMock(return_value=queue)
-        poller.remove_file = MagicMock()
+        mock_poller.add_file = MagicMock(return_value=queue)
+        mock_poller.remove_file = MagicMock()
 
         connector = MagicMock()
         connector.on_data = AsyncMock()
         connector.on_close = AsyncMock()
 
-        session = TerminalSession(poller, "sid", "bash")
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.master_fd = 10
         session._connector = connector
 
@@ -458,15 +381,12 @@ class TestTerminalSession:
 
         connector.on_data.assert_awaited_once_with(b"hello")
         connector.on_close.assert_awaited_once()
-        poller.remove_file.assert_called_once_with(10)
+        mock_poller.remove_file.assert_called_once_with(10)
         mock_close.assert_called_once_with(10)
 
     @pytest.mark.asyncio
-    async def test_start_updates_connector_when_already_running(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
+    async def test_start_updates_connector_when_already_running(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.master_fd = 10
 
         existing = asyncio.create_task(asyncio.sleep(0))
@@ -480,24 +400,18 @@ class TestTerminalSession:
         await existing
 
     @pytest.mark.asyncio
-    async def test_send_bytes_writes_via_poller(self):
-        from webterm.terminal_session import TerminalSession
+    async def test_send_bytes_writes_via_poller(self, mock_poller):
+        mock_poller.write = AsyncMock()
 
-        poller = MagicMock()
-        poller.write = AsyncMock()
-
-        session = TerminalSession(poller, "sid", "bash")
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.master_fd = 10
 
         assert await session.send_bytes(b"x") is True
-        poller.write.assert_awaited_once_with(10, b"x")
+        mock_poller.write.assert_awaited_once_with(10, b"x")
 
     @pytest.mark.asyncio
-    async def test_open_set_terminal_size_oserror_closes_fd_and_clears_master_fd(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
+    async def test_open_set_terminal_size_oserror_closes_fd_and_clears_master_fd(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bash")
 
         with (
             patch("webterm.terminal_session.pty.fork", return_value=(1234, 99)),
@@ -511,11 +425,8 @@ class TestTerminalSession:
         assert session.master_fd is None
 
     @pytest.mark.asyncio
-    async def test_set_terminal_size_uses_executor(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
+    async def test_set_terminal_size_uses_executor(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.master_fd = 10
 
         loop = asyncio.get_running_loop()
@@ -524,11 +435,8 @@ class TestTerminalSession:
 
         run_in_executor.assert_awaited_once_with(None, session._set_terminal_size, 80, 24)
 
-    def test__set_terminal_size_calls_ioctl(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
+    def test__set_terminal_size_calls_ioctl(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.master_fd = 10
 
         with patch("webterm.terminal_session.fcntl.ioctl") as mock_ioctl:
@@ -537,11 +445,8 @@ class TestTerminalSession:
         assert mock_ioctl.called
 
     @pytest.mark.asyncio
-    async def test_start_creates_task_when_not_running(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
+    async def test_start_creates_task_when_not_running(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.master_fd = 10
 
         session.run = AsyncMock()  # type: ignore[method-assign]
@@ -555,65 +460,53 @@ class TestTerminalSession:
         session.run.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_run_without_connector_still_closes(self):
-        from webterm.terminal_session import TerminalSession
-
+    async def test_run_without_connector_still_closes(self, mock_poller):
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         await queue.put(b"hello")
         await queue.put(None)
 
-        poller = MagicMock()
-        poller.add_file = MagicMock(return_value=queue)
-        poller.remove_file = MagicMock()
+        mock_poller.add_file = MagicMock(return_value=queue)
+        mock_poller.remove_file = MagicMock()
 
-        session = TerminalSession(poller, "sid", "bash")
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.master_fd = 10
         session._connector = None
 
         with patch("webterm.terminal_session.os.close") as mock_close:
             await session.run()
 
-        poller.remove_file.assert_called_once_with(10)
+        mock_poller.remove_file.assert_called_once_with(10)
         mock_close.assert_called_once_with(10)
 
     @pytest.mark.asyncio
-    async def test_run_oserror_still_closes(self):
-        from webterm.terminal_session import TerminalSession
-
+    async def test_run_oserror_still_closes(self, mock_poller):
         queue = MagicMock()
         queue.get = AsyncMock(side_effect=OSError("boom"))
 
-        poller = MagicMock()
-        poller.add_file = MagicMock(return_value=queue)
-        poller.remove_file = MagicMock()
+        mock_poller.add_file = MagicMock(return_value=queue)
+        mock_poller.remove_file = MagicMock()
 
-        session = TerminalSession(poller, "sid", "bash")
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.master_fd = 10
         session._connector = None
 
         with patch("webterm.terminal_session.os.close") as mock_close:
             await session.run()
 
-        poller.remove_file.assert_called_once_with(10)
+        mock_poller.remove_file.assert_called_once_with(10)
         mock_close.assert_called_once_with(10)
 
     @pytest.mark.asyncio
-    async def test_close_process_lookup_error_is_ignored(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
+    async def test_close_process_lookup_error_is_ignored(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.pid = 123
 
         with patch("webterm.terminal_session.os.kill", side_effect=ProcessLookupError()):
             await session.close()
 
     @pytest.mark.asyncio
-    async def test_close_logs_warning_on_unexpected_exception(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
+    async def test_close_logs_warning_on_unexpected_exception(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.pid = 123
 
         with (
@@ -625,11 +518,8 @@ class TestTerminalSession:
         assert warn.called
 
     @pytest.mark.asyncio
-    async def test_wait_suppresses_cancelled_error(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
+    async def test_wait_suppresses_cancelled_error(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bash")
 
         task = asyncio.create_task(asyncio.sleep(10))
         task.cancel()
@@ -637,11 +527,8 @@ class TestTerminalSession:
 
         await session.wait()
 
-    def test_is_running_false_when_kill_fails(self):
-        from webterm.terminal_session import TerminalSession
-
-        poller = MagicMock()
-        session = TerminalSession(poller, "sid", "bash")
+    def test_is_running_false_when_kill_fails(self, mock_poller):
+        session = TerminalSession(mock_poller, "sid", "bash")
         session.master_fd = 10
         session._task = MagicMock()
         session.pid = 123

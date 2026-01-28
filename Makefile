@@ -1,4 +1,4 @@
-.PHONY: help install install-dev lint format test coverage check clean clean-all build build-all bundle bundle-watch bundle-clean typecheck bump-patch
+.PHONY: help install install-dev lint format test coverage check clean clean-all build build-all build-fast bundle bundle-watch bundle-clean typecheck bump-patch push
 
 PYTHON ?= python3
 PIP ?= $(PYTHON) -m pip
@@ -6,92 +6,63 @@ PIP ?= $(PYTHON) -m pip
 # Static assets
 STATIC_JS_DIR = src/webterm/static/js
 TERMINAL_JS = $(STATIC_JS_DIR)/terminal.js
-TERMINAL_TS = $(STATIC_JS_DIR)/terminal.ts
 GHOSTTY_WASM = $(STATIC_JS_DIR)/ghostty-vt.wasm
 
-help:
-	@echo "Build targets:"
-	@echo "  build-all    - Full reproducible build (clean + deps + bundle + install)"
-	@echo "  build        - Build frontend (typecheck + bundle)"
-	@echo "  build-fast   - Build frontend without typecheck"
-	@echo "  bundle       - Alias for build"
-	@echo "  bundle-watch - Watch mode for development"
-	@echo "  typecheck    - Run TypeScript type checking"
-	@echo ""
-	@echo "Python targets:"
-	@echo "  install      - Install package in editable mode"
-	@echo "  install-dev  - Install with dev dependencies"
-	@echo "  lint         - Run ruff linter"
-	@echo "  format       - Format code with ruff"
-	@echo "  test         - Run pytest"
-	@echo "  coverage     - Run pytest with coverage"
-	@echo "  check        - Run lint + coverage"
-	@echo ""
-	@echo "Clean targets:"
-	@echo "  clean        - Remove Python cache files"
-	@echo "  bundle-clean - Remove frontend build artifacts"
-	@echo "  clean-all    - Remove everything (clean + bundle-clean)"
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 # =============================================================================
 # Full reproducible build
 # =============================================================================
 
-build-all: clean-all node_modules build install-dev check
+build-all: clean-all node_modules build install-dev check ## Full reproducible build (clean + deps + bundle + install)
 	@echo "Build complete!"
 
 # =============================================================================
 # Python targets
 # =============================================================================
 
-install:
+install: ## Install package in editable mode
 	$(PIP) install -e .
 
-install-dev:
-	$(PIP) install -e .
+install-dev: install ## Install with dev dependencies
 	$(PIP) install pytest pytest-asyncio pytest-cov pytest-timeout ruff
 
-lint:
+lint: ## Run ruff linter
 	ruff check src tests
 
-format:
+format: ## Format code with ruff
 	ruff format src tests
 
-test:
+test: ## Run pytest
 	pytest
 
-coverage:
+coverage: ## Run pytest with coverage
 	pytest --cov=src/webterm --cov-report=term-missing
 
-check: lint coverage
+check: lint coverage ## Run lint + coverage
 
 # =============================================================================
 # Frontend build targets (requires Bun: https://bun.sh)
-# All frontend commands MUST go through bun run to ensure consistency
 # =============================================================================
 
-# Install node dependencies (creates bun.lock if missing)
 node_modules: package.json
 	bun install
 	@touch node_modules
 
-# TypeScript type checking
-typecheck: node_modules
+typecheck: node_modules ## Run TypeScript type checking
 	bun run typecheck
 
-# Main build target - typecheck + bundle + copy WASM
-build: node_modules
+build: node_modules ## Build frontend (typecheck + bundle)
 	bun run build
 
-# Fast build without typecheck (for rapid iteration)
-build-fast: node_modules
+build-fast: node_modules ## Build frontend without typecheck
 	bun run build:fast
 	@test -f $(GHOSTTY_WASM) || bun run copy-wasm
 
-# Alias for build
-bundle: build
+bundle: build ## Alias for build
 
-# Watch mode for development
-bundle-watch: node_modules
+bundle-watch: node_modules ## Watch mode for frontend development
 	@test -f $(GHOSTTY_WASM) || bun run copy-wasm
 	bun run watch
 
@@ -99,24 +70,29 @@ bundle-watch: node_modules
 # Clean targets
 # =============================================================================
 
-clean:
+clean: ## Remove Python cache files
 	rm -rf .pytest_cache .coverage htmlcov .ruff_cache __pycache__ src/**/__pycache__
 
-bundle-clean:
+bundle-clean: ## Remove frontend build artifacts
 	rm -rf node_modules bun.lock $(TERMINAL_JS) $(GHOSTTY_WASM)
 
-clean-all: clean bundle-clean
+clean-all: clean bundle-clean ## Remove everything (clean + bundle-clean)
 
 # =============================================================================
 # Version management
 # =============================================================================
 
-# Bump patch version (e.g., 0.5.3 -> 0.5.4)
-bump-patch:
+bump-patch: ## Bump patch version and create git tag
 	@OLD=$$(grep -Po '(?<=^version = ")[^"]+' pyproject.toml); \
 	MAJOR=$$(echo $$OLD | cut -d. -f1); \
 	MINOR=$$(echo $$OLD | cut -d. -f2); \
 	PATCH=$$(echo $$OLD | cut -d. -f3); \
 	NEW="$$MAJOR.$$MINOR.$$((PATCH + 1))"; \
 	sed -i "s/^version = \"$$OLD\"/version = \"$$NEW\"/" pyproject.toml; \
-	echo "Bumped version: $$OLD -> $$NEW"
+	git add pyproject.toml; \
+	git commit -m "Bump version to $$NEW"; \
+	git tag "v$$NEW"; \
+	echo "Bumped version: $$OLD -> $$NEW (tagged v$$NEW)"
+
+push: ## Push commits and tags to origin
+	git push origin main --tags

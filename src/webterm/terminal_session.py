@@ -57,6 +57,9 @@ class TerminalSession(Session):
         # Track last known terminal size for reconnection
         self._last_width = DEFAULT_SCREEN_WIDTH
         self._last_height = DEFAULT_SCREEN_HEIGHT
+        # Change counter for reliable activity detection (monotonically increasing)
+        self._change_counter = 0
+        self._last_snapshot_counter = 0
         super().__init__()
 
     def __repr__(self) -> str:
@@ -146,6 +149,8 @@ class TerminalSession(Session):
             await loop.run_in_executor(None, self._set_terminal_size, width, height)
             # Resize pyte screen to match
             self._screen.resize(height, width)
+            # Increment change counter since resize changes screen content
+            self._change_counter += 1
 
     async def force_redraw(self) -> None:
         """Force a terminal redraw by re-sending current size."""
@@ -169,6 +174,9 @@ class TerminalSession(Session):
             try:
                 text = data.decode("utf-8", errors="replace")
                 self._stream.feed(text)
+                # Increment change counter when screen is modified
+                if self._screen.dirty:
+                    self._change_counter += 1
             except Exception:
                 # Don't let pyte errors crash the session
                 pass
@@ -188,13 +196,59 @@ class TerminalSession(Session):
             return [line.rstrip() for line in self._screen.display]
 
     async def get_screen_has_changes(self) -> bool:
-        """Check if the screen has changed since the last snapshot."""
-        await self._sync_pyte_to_pty()
+        """Check if the screen has changed since the last snapshot.
+
+        This is a non-mutating read-only check that compares the change counter.
+        """
         async with self._screen_lock:
-            return len(self._screen.dirty) > 0
+            return self._change_counter > self._last_snapshot_counter
+
+    async def get_screen_snapshot(self) -> tuple[int, int, list, bool]:
+        """Get a read-only snapshot of the current screen state for screenshots.
+
+        This method does NOT mutate terminal state - safe for dashboard screenshots.
+
+        Returns:
+            Tuple of (width, height, buffer, has_changes) where:
+            - width: screen width in columns
+            - height: screen height in rows
+            - buffer: list of rows, each containing character data with styling
+            - has_changes: True if screen has changed since last snapshot
+        """
+        async with self._screen_lock:
+            width = self._screen.columns
+            height = self._screen.lines
+            has_changes = self._change_counter > self._last_snapshot_counter
+            # Update the snapshot counter to track what we've seen
+            self._last_snapshot_counter = self._change_counter
+            # Snapshot buffer cells quickly to minimize lock hold time
+            snapshot = [
+                [self._screen.buffer[row][col] for col in range(width)] for row in range(height)
+            ]
+
+        buffer = []
+        for row_data in snapshot:
+            row_chars = []
+            for char in row_data:
+                row_chars.append(
+                    {
+                        "data": char.data if char.data else " ",
+                        "fg": char.fg,
+                        "bg": char.bg,
+                        "bold": char.bold,
+                        "italics": char.italics,
+                        "underscore": char.underscore,
+                        "reverse": char.reverse,
+                    }
+                )
+            buffer.append(row_chars)
+        return (width, height, buffer, has_changes)
 
     async def get_screen_state(self) -> tuple[int, int, list, bool]:
         """Get the current screen state including dimensions and character buffer.
+
+        Note: This method syncs pyte to PTY size and clears dirty flags.
+        For read-only screenshot access, use get_screen_snapshot() instead.
 
         Returns:
             Tuple of (width, height, buffer, has_changes) where:

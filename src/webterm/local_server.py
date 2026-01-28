@@ -554,18 +554,18 @@ class LocalServer:
                 if cached_response is not None:
                     return cached_response
 
-            has_changes = await session_process.get_screen_has_changes()  # type: ignore[union-attr]
-            if not has_changes and cached is not None:
-                cached_response = self._get_cached_screenshot_response(request, route_key)
-                if cached_response is not None:
-                    return cached_response
-
+            # Use non-mutating snapshot method to avoid affecting terminal state
             (
                 screen_width,
                 screen_height,
                 screen_buffer,
-                _,
-            ) = await session_process.get_screen_state()  # type: ignore[union-attr]
+                has_changes,
+            ) = await session_process.get_screen_snapshot()  # type: ignore[union-attr]
+
+            if not has_changes and cached is not None:
+                cached_response = self._get_cached_screenshot_response(request, route_key)
+                if cached_response is not None:
+                    return cached_response
 
             def _render_svg() -> str:
                 # Use custom SVG exporter - simpler and more reliable than Rich
