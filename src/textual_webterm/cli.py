@@ -116,6 +116,25 @@ def load_app_class(app_path: str):
     type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path),
     help='Docker compose YAML; services with label "webterm-command" become landing tiles.',
 )
+@click.option(
+    "--theme",
+    "-t",
+    help="Terminal color theme (monokai, dark, light, dracula, catppuccin, nord, gruvbox, solarized, tokyo).",
+    default="monokai",
+)
+@click.option(
+    "--font-family",
+    "-f",
+    help="Terminal font family (CSS font stack).",
+    default=None,
+)
+@click.option(
+    "--font-size",
+    "-s",
+    type=int,
+    help="Terminal font size in pixels.",
+    default=16,
+)
 def app(
     command: str | None,
     port: int,
@@ -123,6 +142,9 @@ def app(
     app_path: str | None,
     landing_manifest: Path | None,
     compose_manifest: Path | None,
+    theme: str,
+    font_family: str | None,
+    font_size: int,
 ) -> None:
     """Serve a terminal or Textual app over HTTP/WebSocket.
 
@@ -165,6 +187,9 @@ def app(
         landing_apps=landing_apps,
         compose_mode=is_compose_mode,
         compose_project=compose_project,
+        theme=theme,
+        font_family=font_family,
+        font_size=font_size,
     )
     for app_entry in landing_apps:
         server.add_terminal(app_entry.name, app_entry.command, slug=app_entry.slug)

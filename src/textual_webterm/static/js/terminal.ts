@@ -292,6 +292,7 @@ class WebTerminal {
   private reconnectDelay = 1000;
   private messageQueue: [string, unknown][] = [];
   private lastValidSize: { cols: number; rows: number } | null = null;
+  private mobileInput: HTMLTextAreaElement | null = null;
 
   private constructor(
     container: HTMLElement,
@@ -365,8 +366,106 @@ class WebTerminal {
       }
     });
 
+    // Setup mobile keyboard support
+    this.setupMobileKeyboard();
+
     // Connect WebSocket
     this.connect();
+  }
+
+  /** Setup mobile keyboard input via hidden textarea */
+  private setupMobileKeyboard(): void {
+    // Create hidden textarea for mobile keyboard input
+    const textarea = document.createElement("textarea");
+    textarea.setAttribute("autocapitalize", "off");
+    textarea.setAttribute("autocomplete", "off");
+    textarea.setAttribute("autocorrect", "off");
+    textarea.setAttribute("spellcheck", "false");
+    textarea.setAttribute("inputmode", "text");
+    textarea.setAttribute("enterkeyhint", "send");
+    // Style to be invisible but still focusable (not display:none)
+    textarea.style.cssText = `
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      z-index: -1;
+      pointer-events: none;
+      font-size: 16px;
+    `;
+    // Font size 16px prevents iOS auto-zoom on focus
+    
+    this.element.style.position = "relative";
+    this.element.appendChild(textarea);
+    this.mobileInput = textarea;
+
+    // Handle input from mobile keyboard
+    textarea.addEventListener("input", () => {
+      const value = textarea.value;
+      if (value) {
+        this.send(["stdin", value]);
+        textarea.value = "";
+      }
+    });
+
+    // Handle special keys via keydown
+    textarea.addEventListener("keydown", (e) => {
+      let seq: string | null = null;
+      switch (e.key) {
+        case "Enter":
+          seq = "\r";
+          break;
+        case "Backspace":
+          seq = "\x7f";
+          break;
+        case "Escape":
+          seq = "\x1b";
+          break;
+        case "ArrowUp":
+          seq = "\x1b[A";
+          break;
+        case "ArrowDown":
+          seq = "\x1b[B";
+          break;
+        case "ArrowRight":
+          seq = "\x1b[C";
+          break;
+        case "ArrowLeft":
+          seq = "\x1b[D";
+          break;
+        case "Tab":
+          seq = "\t";
+          e.preventDefault();
+          break;
+      }
+      if (seq) {
+        e.preventDefault();
+        this.send(["stdin", seq]);
+      }
+    });
+
+    // Focus textarea on touch/click to show mobile keyboard
+    this.element.addEventListener("touchstart", () => {
+      this.focusMobileInput();
+    }, { passive: true });
+    
+    this.element.addEventListener("click", () => {
+      this.focusMobileInput();
+    });
+  }
+
+  /** Focus the mobile input to show keyboard */
+  private focusMobileInput(): void {
+    if (this.mobileInput) {
+      // Small delay helps with iOS keyboard activation
+      setTimeout(() => {
+        this.mobileInput?.focus({ preventScroll: true });
+      }, 10);
+    }
+    // Also focus the terminal for desktop
+    this.terminal.focus();
   }
 
   /** Wait for fonts to be loaded */
@@ -507,6 +606,10 @@ class WebTerminal {
   /** Clean up resources */
   dispose(): void {
     this.socket?.close();
+    if (this.mobileInput) {
+      this.mobileInput.remove();
+      this.mobileInput = null;
+    }
     this.fitAddon.dispose();
     this.terminal.dispose();
   }

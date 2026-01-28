@@ -124,9 +124,15 @@ class LocalServer:
         landing_apps: list | None = None,
         compose_mode: bool = False,
         compose_project: str | None = None,
+        theme: str = "monokai",
+        font_family: str | None = None,
+        font_size: int = 16,
     ) -> None:
         self.host = host
         self.port = port
+        self.theme = theme
+        self.font_family = font_family
+        self.font_size = font_size
 
         abs_path = Path(config_path).absolute()
         path = abs_path if abs_path.is_dir() else abs_path.parent
@@ -842,6 +848,13 @@ class LocalServer:
         ws_url = self._get_ws_url_from_request(request, route_key)
         page_title = available_app.name if available_app else "Textual Web Terminal"
 
+        # Build data attributes for terminal configuration
+        data_attrs = f'data-session-websocket-url="{ws_url}" data-font-size="{self.font_size}" data-scrollback="1000" data-theme="{self.theme}"'
+        if self.font_family:
+            # Escape quotes for HTML attribute
+            escaped_font = self.font_family.replace('"', "&quot;")
+            data_attrs += f' data-font-family="{escaped_font}"'
+
         html_content = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -854,7 +867,7 @@ class LocalServer:
     </style>
 </head>
 <body>
-    <div id=\"terminal\" class=\"textual-terminal\" data-session-websocket-url=\"{ws_url}\" data-font-size=\"16\" data-scrollback=\"1000\"></div>
+    <div id=\"terminal\" class=\"textual-terminal\" {data_attrs}></div>
     <script type=\"module\" src=\"/static/js/terminal.js\"></script>
 </body>
 </html>"""
