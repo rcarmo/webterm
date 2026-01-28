@@ -353,6 +353,16 @@ class WebTerminal {
         const maxAttempts = 120;
 
         const attemptFitAndResize = (attempt: number) => {
+          // Check terminal readiness before calling proposeDimensions to avoid
+          // "viewport.scrollBarWidth" errors when terminal is not fully initialized
+          if (!this.isTerminalReady()) {
+            if (attempt < maxAttempts) {
+              window.requestAnimationFrame(() => attemptFitAndResize(attempt + 1));
+              return;
+            }
+            // Fall through to use fallback dimensions
+          }
+          
           const dims = (() => {
             try {
               return this.fitAddon.proposeDimensions();
