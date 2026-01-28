@@ -22,7 +22,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#e5e5e5",
     cursor: "#e5e5e5",
     cursorAccent: "#000000",
-    selectionBackground: "#4d4d4d",
+    selectionBackground: "#d4d4d4",
     black: "#000000",
     red: "#cd0000",
     green: "#00cd00",
