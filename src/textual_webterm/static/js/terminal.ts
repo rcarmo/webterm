@@ -383,17 +383,23 @@ class WebTerminal {
     textarea.setAttribute("spellcheck", "false");
     textarea.setAttribute("inputmode", "text");
     textarea.setAttribute("enterkeyhint", "send");
-    // Style to be invisible but still focusable (not display:none)
+    // iOS requires the element to be "visible" and interactive for keyboard
+    // Use opacity near-zero but not zero, and keep it in the visible area
     textarea.style.cssText = `
       position: absolute;
       left: 0;
       top: 0;
-      width: 1px;
-      height: 1px;
-      opacity: 0;
-      z-index: -1;
-      pointer-events: none;
+      width: 100%;
+      height: 100%;
+      opacity: 0.01;
+      z-index: 1;
+      color: transparent;
+      background: transparent;
+      border: none;
+      outline: none;
+      resize: none;
       font-size: 16px;
+      caret-color: transparent;
     `;
     // Font size 16px prevents iOS auto-zoom on focus
     
@@ -447,24 +453,24 @@ class WebTerminal {
     });
 
     // Focus textarea on touch/click to show mobile keyboard
-    this.element.addEventListener("touchstart", () => {
-      this.focusMobileInput();
+    // iOS requires focus() to be called synchronously within the gesture
+    this.element.addEventListener("touchend", (e) => {
+      // Only respond to single touch on terminal area
+      if (e.target === textarea || e.target === this.element || this.element.contains(e.target as Node)) {
+        this.mobileInput?.focus();
+      }
     }, { passive: true });
     
     this.element.addEventListener("click", () => {
-      this.focusMobileInput();
+      this.mobileInput?.focus();
+      this.terminal.focus();
     });
   }
 
   /** Focus the mobile input to show keyboard */
   private focusMobileInput(): void {
-    if (this.mobileInput) {
-      // Small delay helps with iOS keyboard activation
-      setTimeout(() => {
-        this.mobileInput?.focus({ preventScroll: true });
-      }, 10);
-    }
-    // Also focus the terminal for desktop
+    // For programmatic focus (not from user gesture), this may not show keyboard on iOS
+    this.mobileInput?.focus();
     this.terminal.focus();
   }
 
