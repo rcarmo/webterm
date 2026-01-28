@@ -1,4 +1,4 @@
-"""Pytest configuration and fixtures for textual-webterm tests."""
+"""Pytest configuration and fixtures for webterm tests."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from textual_webterm.config import App, Config
-from textual_webterm.local_server import LocalServer
-from textual_webterm.poller import Poller
-from textual_webterm.session_manager import SessionManager
+from webterm.config import App, Config
+from webterm.local_server import LocalServer
+from webterm.poller import Poller
+from webterm.session_manager import SessionManager
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Generator

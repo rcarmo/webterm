@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from textual_webterm.config import App, Config
+import pytest
+
+from webterm.config import App, Config
 
 
 class TestApp:
@@ -21,13 +23,12 @@ class TestApp:
         assert app.terminal is True
         assert app.command == "bash"
 
-    def test_create_textual_app(self) -> None:
-        """Test creating a Textual app configuration."""
+    def test_create_terminal_app_defaults(self) -> None:
+        """Test creating a terminal app configuration with defaults."""
         app = App(
             name="My App",
             slug="my-app",
-            terminal=False,
-            command="python -m myapp",
+            command="bash",
         )
         assert app.terminal is False
 
@@ -53,7 +54,7 @@ class TestDefaultConfig:
 
     def test_default_config_returns_config(self):
         """Test that default_config returns a Config object."""
-        from textual_webterm.config import default_config
+        from webterm.config import default_config
 
         config = default_config()
         assert config is not None
@@ -63,27 +64,24 @@ class TestDefaultConfig:
 class TestLoadConfig:
     """Tests for load_config function."""
 
-    def test_load_config_parses_app_and_terminal(self, tmp_path):
-        from textual_webterm.config import load_config
+    def test_load_config_parses_terminal_only(self, tmp_path):
+        from webterm.config import load_config
 
         config_path = tmp_path / "config.toml"
         config_path.write_text(
             """
-[app.demo]
-command = "echo demo"
-
 [terminal.shell]
 command = "bash"
 """.lstrip()
         )
 
         config = load_config(config_path)
-        assert len(config.apps) == 2
-        assert {a.name for a in config.apps} == {"demo", "shell"}
+        assert len(config.apps) == 1
+        assert {a.name for a in config.apps} == {"shell"}
         assert any(a.terminal for a in config.apps)
 
-    def test_load_config_slugify_for_app(self, tmp_path):
-        from textual_webterm.config import load_config
+    def test_load_config_rejects_app_entries(self, tmp_path):
+        from webterm.config import load_config
 
         config_path = tmp_path / "config.toml"
         config_path.write_text(
@@ -92,11 +90,11 @@ command = "bash"
 command = "echo hi"
 """.lstrip()
         )
-        config = load_config(config_path)
-        assert config.apps[0].slug
+        with pytest.raises(ValueError):
+            load_config(config_path)
 
     def test_load_config_expands_vars(self, tmp_path, monkeypatch):
-        from textual_webterm.config import load_config
+        from webterm.config import load_config
 
         monkeypatch.setenv("MY_CMD", "echo expanded")
         config_path = tmp_path / "config.toml"

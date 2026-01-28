@@ -1,6 +1,6 @@
 """Tests for slugify module."""
 
-from textual_webterm.slugify import slugify
+from webterm.slugify import slugify
 
 
 class TestSlugify:

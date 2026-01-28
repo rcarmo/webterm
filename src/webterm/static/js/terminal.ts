@@ -1,5 +1,5 @@
 /**
- * ghostty-web terminal client for textual-webterm.
+ * ghostty-web terminal client for webterm.
  *
  * Implements the WebSocket protocol compatible with local_server.py:
  * - Client → Server: ["stdin", data], ["resize", {width, height}], ["ping", data]
@@ -409,10 +409,12 @@ class WebTerminal {
     // Build terminal options
     const themeToUse = config.theme ?? THEMES.xterm;
     console.log("[webterm:create] Theme to use (config.theme ?? THEMES.xterm):", JSON.stringify(themeToUse, null, 2));
-    
+    const fontFamily = config.fontFamily?.trim() || DEFAULT_FONT_FAMILY;
+    const fontSize = config.fontSize ?? 16;
+
     const options: ITerminalOptions = {
-      fontFamily: config.fontFamily ?? DEFAULT_FONT_FAMILY,
-      fontSize: config.fontSize ?? 16,
+      fontFamily,
+      fontSize,
       scrollback: config.scrollback ?? 1000,
       cursorBlink: true,
       cursorStyle: "block",
@@ -456,8 +458,8 @@ class WebTerminal {
       wsUrl,
       terminal,
       fitAddon,
-      options.fontFamily ?? DEFAULT_FONT_FAMILY,
-      options.fontSize ?? 16
+      fontFamily,
+      fontSize
     );
     console.log("[webterm:create] WebTerminal instance created");
     instance.initialize();
@@ -488,7 +490,11 @@ class WebTerminal {
     
     // Wait for fonts to load before fitting to ensure correct measurements
     this.waitForFonts().then(() => {
-      console.log("[webterm:init] Fonts loaded, calling fit()...");
+      console.log("[webterm:init] Fonts loaded, reapplying font family and fitting...");
+      this.terminal.options.fontFamily = this.fontFamily;
+      if (typeof (this.terminal as unknown as { loadFonts?: () => void }).loadFonts === "function") {
+        (this.terminal as unknown as { loadFonts: () => void }).loadFonts();
+      }
       this.fit();
       console.log("[webterm:init] fit() completed");
       
@@ -1151,8 +1157,8 @@ const instances: Map<HTMLElement, WebTerminal> = new Map();
 /** Initialize all terminal containers on page load */
 async function initTerminals(): Promise<void> {
   console.log("[webterm:init] initTerminals() called");
-  const containers = document.querySelectorAll<HTMLElement>(".textual-terminal");
-  console.log(`[webterm:init] Found ${containers.length} .textual-terminal containers`);
+  const containers = document.querySelectorAll<HTMLElement>(".webterm-terminal");
+  console.log(`[webterm:init] Found ${containers.length} .webterm-terminal containers`);
 
   for (const el of containers) {
     console.log("[webterm:init] Processing container:", el);
@@ -1160,7 +1166,7 @@ async function initTerminals(): Promise<void> {
     
     const wsUrl = el.dataset.sessionWebsocketUrl;
     if (!wsUrl) {
-      console.error("Missing data-session-websocket-url on terminal container");
+        console.error("Missing data-session-websocket-url on terminal container");
       continue;
     }
 

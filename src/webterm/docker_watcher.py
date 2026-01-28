@@ -17,7 +17,7 @@ from .docker_stats import get_docker_socket_path
 if TYPE_CHECKING:
     from .session_manager import SessionManager
 
-log = logging.getLogger("textual-webterm")
+log = logging.getLogger("webterm")
 
 LABEL_NAME = "webterm-command"
 DEFAULT_COMMAND = "/bin/bash"

@@ -6,7 +6,7 @@ class TestConstants:
 
     def test_import(self):
         """Test module can be imported."""
-        from textual_webterm import constants
+        from webterm import constants
 
         assert constants is not None
 
@@ -14,7 +14,7 @@ class TestConstants:
         """Test DEBUG constant exists and respects env var."""
         import importlib
 
-        from textual_webterm import constants
+        from webterm import constants
 
         assert hasattr(constants, "DEBUG")
         assert isinstance(constants.DEBUG, bool)
@@ -33,7 +33,7 @@ class TestExitPoller:
 
     def test_import(self):
         """Test module can be imported."""
-        from textual_webterm.exit_poller import ExitPoller
+        from webterm.exit_poller import ExitPoller
 
         assert ExitPoller is not None
 
@@ -41,8 +41,8 @@ class TestExitPoller:
         """ExitPoller should call force_exit after idle_wait seconds with no sessions."""
         import asyncio
 
-        from textual_webterm import exit_poller
-        from textual_webterm.exit_poller import ExitPoller
+        from webterm import exit_poller
+        from webterm.exit_poller import ExitPoller
 
         # Speed up the poll loop for the unit test.
         monkeypatch.setattr(exit_poller, "EXIT_POLL_RATE", 0.01)

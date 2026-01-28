@@ -9,9 +9,9 @@ import pytest
 from aiohttp import WSMsgType, web
 from aiohttp.test_utils import TestClient, TestServer
 
-from textual_webterm.config import App, Config
-from textual_webterm.local_server import LocalServer
-from textual_webterm.types import RouteKey, SessionID
+from webterm.config import App, Config
+from webterm.local_server import LocalServer
+from webterm.types import RouteKey, SessionID
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

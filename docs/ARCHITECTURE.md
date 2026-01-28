@@ -1,12 +1,12 @@
 # Architecture
 
-This document describes the internal architecture of textual-webterm.
+This document describes the internal architecture of webterm.
 
 ## Overview
 
-textual-webterm is a web-based terminal server that exposes terminal sessions over HTTP and WebSocket. It's designed to run behind a reverse proxy with authentication.
+webterm is a web-based terminal server that exposes terminal sessions over HTTP and WebSocket. It's designed to run behind a reverse proxy with authentication.
 
-> **Note:** As of v1.0.0, this project uses [ghostty-web](https://github.com/rcarmo/ghostty-web) (a patched fork with native theme support) instead of xterm.js. Textual app support has been deprecated in favor of direct terminal access.
+> **Note:** As of v1.0.0, this project uses [ghostty-web](https://github.com/rcarmo/ghostty-web) (a patched fork with native theme support) instead of xterm.js.
 
 ```
 ┌─────────────┐      ┌──────────────────────────────────────────────────┐
@@ -44,8 +44,8 @@ Key classes:
 Manages the mapping between route keys and sessions:
 
 - **TwoWayDict**: Bidirectional mapping of RouteKey ↔ SessionID
-- **Session creation**: Creates TerminalSession or AppSession on demand
-- **App registry**: Stores app configurations from manifest files
+- **Session creation**: Creates TerminalSession on demand
+- **App registry**: Stores terminal configurations from manifest files
 
 ### terminal_session.py
 
@@ -229,14 +229,13 @@ Unlike traditional web terminals, sessions survive page refreshes:
 ## File Structure
 
 ```
-src/textual_webterm/
+src/webterm/
 ├── cli.py              # Click CLI entry point
 ├── config.py           # Configuration parsing (YAML manifests)
 ├── local_server.py     # Main HTTP/WebSocket server
 ├── session_manager.py  # Session registry and routing
 ├── session.py          # Abstract session interface
 ├── terminal_session.py # PTY-based terminal session
-├── app_session.py      # Textual app session
 ├── poller.py           # Async I/O polling thread
 ├── svg_exporter.py     # Terminal→SVG renderer
 ├── docker_stats.py     # Docker CPU metrics collector

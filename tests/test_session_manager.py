@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from textual_webterm.config import App
-from textual_webterm.session_manager import SessionManager
-from textual_webterm.types import RouteKey, SessionID
+from webterm.config import App
+from webterm.session_manager import SessionManager
+from webterm.types import RouteKey, SessionID
 
 
 class TestSessionManager:
@@ -173,7 +173,7 @@ class TestSessionManager:
     @pytest.mark.skipif(platform.system() == "Windows", reason="Terminal not supported on Windows")
     async def test_new_terminal_session(self, mock_poller, mock_path):
         """Test creating a new terminal session."""
-        from textual_webterm.terminal_session import TerminalSession
+        from webterm.terminal_session import TerminalSession
 
         app = App(name="Terminal", slug="term", path="./", command="echo test", terminal=True)
         manager = SessionManager(mock_poller, mock_path, [app])
@@ -189,25 +189,6 @@ class TestSessionManager:
             assert isinstance(result, TerminalSession)
             assert SessionID("test-session") in manager.sessions
             assert RouteKey("test-route") in manager.routes
-
-    @pytest.mark.asyncio
-    async def test_new_app_session(self, mock_poller, mock_path):
-        """Test creating a new app session."""
-        from textual_webterm.app_session import AppSession
-
-        app = App(name="App", slug="app", path="./", command="python app.py", terminal=False)
-        manager = SessionManager(mock_poller, mock_path, [app])
-
-        with patch.object(AppSession, "open", new_callable=AsyncMock):
-            result = await manager.new_session(
-                "app",
-                SessionID("test-session"),
-                RouteKey("test-route"),
-            )
-
-            assert result is not None
-            assert isinstance(result, AppSession)
-
 
 class TestSessionManagerRoutes:
     """Tests for SessionManager route handling."""

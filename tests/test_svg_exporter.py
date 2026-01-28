@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from textual_webterm.svg_exporter import (
+from webterm.svg_exporter import (
     ANSI_COLORS,
     DEFAULT_BG,
     DEFAULT_FG,

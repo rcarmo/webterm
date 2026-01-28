@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from textual_webterm.session import Session, SessionConnector
-from textual_webterm.types import RouteKey, SessionID
+from webterm.session import Session, SessionConnector
+from webterm.types import RouteKey, SessionID
 
 
 class TestSessionConnector:
@@ -68,14 +68,14 @@ class TestIdentity:
 
     def test_generate_unique_ids(self) -> None:
         """Test that generated IDs are unique."""
-        from textual_webterm.identity import generate
+        from webterm.identity import generate
 
         ids = [generate() for _ in range(100)]
         assert len(set(ids)) == 100  # All unique
 
     def test_generate_id_format(self) -> None:
         """Test that generated IDs have expected format."""
-        from textual_webterm.identity import generate
+        from webterm.identity import generate
 
         id_ = generate()
         assert isinstance(id_, str)

@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiohttp import web
 
-from textual_webterm.config import App, Config
-from textual_webterm.local_server import (
+from webterm.config import App, Config
+from webterm.local_server import (
     LocalServer,
 )
 
@@ -16,20 +16,20 @@ class TestGetStaticPath:
 
     def test_static_path_exists(self):
         """Test that static path exists."""
-        from textual_webterm.local_server import WEBTERM_STATIC_PATH
+        from webterm.local_server import WEBTERM_STATIC_PATH
 
         assert WEBTERM_STATIC_PATH is not None and WEBTERM_STATIC_PATH.exists()
 
     def test_static_path_has_js(self):
         """Test that static path has JS directory."""
-        from textual_webterm.local_server import WEBTERM_STATIC_PATH
+        from webterm.local_server import WEBTERM_STATIC_PATH
 
         assert WEBTERM_STATIC_PATH is not None
         assert (WEBTERM_STATIC_PATH / "js").exists()
 
     def test_static_path_has_wasm(self):
         """Test that static path has WASM file."""
-        from textual_webterm.local_server import WEBTERM_STATIC_PATH
+        from webterm.local_server import WEBTERM_STATIC_PATH
 
         assert WEBTERM_STATIC_PATH is not None
         assert (WEBTERM_STATIC_PATH / "js" / "ghostty-vt.wasm").exists()
@@ -66,8 +66,8 @@ class TestLocalServer:
         assert server.session_manager is not None
 
     def test_add_app(self, server):
-        """Test adding an app."""
-        server.add_app("New App", "python app.py", "newapp")
+        """Test adding a terminal app."""
+        server.add_app("New Terminal", "bash", "newapp")
         assert "newapp" in server.session_manager.apps_by_slug
 
     def test_add_terminal(self, server):
@@ -79,7 +79,7 @@ class TestLocalServer:
 
     @pytest.mark.asyncio
     async def test_create_terminal_session_uses_slug_and_starts_session(self, server, monkeypatch):
-        from textual_webterm import local_server
+        from webterm import local_server
 
         monkeypatch.setattr(local_server, "generate", lambda: "fixed-session")
 
@@ -404,7 +404,7 @@ class TestLocalServerMoreCoverage:
         assert server_with_no_apps.exit_event.is_set()
 
     def test_add_terminal_windows_noop(self, server_with_no_apps, monkeypatch):
-        from textual_webterm import constants as constants_mod
+        from webterm import constants as constants_mod
 
         monkeypatch.setattr(constants_mod, "WINDOWS", True)
         server_with_no_apps.add_terminal("T", "cmd", "slug")
@@ -542,7 +542,7 @@ class TestLocalServerMoreCoverage:
             coro.close()
             return MagicMock()
 
-        monkeypatch.setattr("textual_webterm.local_server.asyncio.create_task", fake_create_task)
+        monkeypatch.setattr("webterm.local_server.asyncio.create_task", fake_create_task)
 
         server_with_no_apps.on_keyboard_interrupt()
         assert fake_loop.call_soon_threadsafe.called
@@ -556,7 +556,7 @@ class TestLocalServerMoreCoverage:
     ):
         from unittest.mock import MagicMock
 
-        from textual_webterm import local_server
+        from webterm import local_server
 
         # Create a mock path that returns False for exists()
         fake_path = MagicMock()

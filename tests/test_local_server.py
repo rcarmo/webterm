@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from textual_webterm.config import App, Config
-from textual_webterm.local_server import WEBTERM_STATIC_PATH, LocalServer
+from webterm.config import App, Config
+from webterm.local_server import WEBTERM_STATIC_PATH, LocalServer
 
 
 class TestLocalServer:

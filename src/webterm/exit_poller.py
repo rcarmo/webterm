@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 EXIT_POLL_RATE = 5
 
-log = logging.getLogger("textual-web")
+log = logging.getLogger("webterm")
 
 if TYPE_CHECKING:
     from .local_server import LocalServer

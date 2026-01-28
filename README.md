@@ -1,34 +1,31 @@
-# textual-webterm
+# webterm
 
 ![Icon](docs/icon-256.png)
 
-Serve terminal sessions and Textual apps over the web with a simple CLI command.
+Serve terminal sessions over the web with a simple CLI command.
 
-This is heavily based on [textual-web](https://github.com/Textualize/textual-web), but specifically focused on serving a persistent terminal session in a way that you can host behind a reverse proxy (and some form of authentication).
+> **Credit and Inspiration:** This project was originally based on the genius [web](https://github.com/Textualize/web) package, which uses `xterm.js`. It has been rewritten to use a [ghostty-web](https://github.com/coder/ghostty-web)'s WebAssembly-based terminal emulator, which provides better performance and native theme support. 
 
-Built on a [patched version of ghostty-web](https://github.com/rcarmo/ghostty-web) (replacing the original xterm.js dependency), this package provides an easy way to expose terminal sessions via HTTP/WebSocket with automatic reconnection support.
+It is, for the moment, temporarily based on a [patched version of ghostty-web](https://github.com/rcarmo/ghostty-web), because the current version has bugs and feature gaps that I needed to fill.
 
-> **Note:** This project originally used [textual-web](https://github.com/Textualize/textual-web) with xterm.js. It has been rewritten to use [ghostty-web](https://github.com/coder/ghostty-web)'s WebAssembly-based terminal emulator, which provides better performance and native theme support. Textual app serving has been deprecated in favor of direct terminal access.
-
-Coupled with [`agentbox`](https://github.com/rcarmo/agentbox), you can use it to keep track of several containerized AI coding agents:
+Coupled with [`agentbox`](https://github.com/rcarmo/agentbox), you can use it to keep track of several containerized AI coding agents, since it provides an easy way to expose terminal sessions via HTTP/WebSocket with automatic reconnection support:
 
 ![Screenshot](docs/screenshot.png)
 
 ## Features
 
-- 🖥️ **Web-based terminal** - Access your terminal from any browser
-- 📱 **Mobile support** - Works on iOS Safari and Android with on-screen keyboard
-- 🐍 **Textual app support** - Serve Textual apps directly from Python modules
-- 🔄 **Session reconnection** - Refresh the page and reconnect to the same session
-- 🎨 **Full terminal emulation** - Colors, cursor, and ANSI codes work correctly
-- 🎭 **Customizable themes** - 9 built-in themes (monokai, dracula, nord, etc.)
-- 🔤 **Custom fonts** - Configure terminal font family and size
-- 📜 **Scrollback history** - Scroll back through terminal output (configurable)
-- 📐 **Auto-sizing** - Terminal automatically resizes to fit the browser window
-- 📸 **Live screenshots** - Dashboard shows real-time SVG screenshots of terminals
-- 📊 **CPU sparklines** - Dashboard displays 30-minute CPU history for Docker containers
-- ⚡ **SSE updates** - Real-time screenshot updates via Server-Sent Events
-- 🚀 **Simple CLI** - One command to start serving
+- **Web-based terminal** - Access your terminal from any browser
+- **Mobile support** - Works on iOS Safari and Android with on-screen keyboard
+- **Session reconnection** - Refresh the page and reconnect to the same session
+- **Full terminal emulation** - Colors, cursor, and ANSI codes work correctly
+- **Customizable themes** - 9 built-in themes (monokai, dracula, nord, etc.)
+- **Custom fonts** - Configure terminal font family and size
+- **Scrollback history** - Scroll back through terminal output (configurable)
+- **Auto-sizing** - Terminal automatically resizes to fit the browser window
+- **Live screenshots** - Dashboard shows real-time SVG screenshots of terminals
+- **CPU sparklines** - Dashboard displays 30-minute CPU history for Docker containers
+- **SSE updates** - Real-time screenshot updates via Server-Sent Events
+- **Simple CLI** - One command to start serving
 
 ## Non-Features
 
@@ -37,16 +34,10 @@ Coupled with [`agentbox`](https://github.com/rcarmo/agentbox), you can use it to
 
 ## Installation
 
-Install from PyPI:
+Install directly from GitHub:
 
 ```bash
-pip install textual-webterm
-```
-
-Or install directly from GitHub:
-
-```bash
-pip install git+https://github.com/rcarmo/textual-webterm.git
+pip install git+https://github.com/rcarmo/webterm.git
 ```
 
 ## Quick Start
@@ -56,27 +47,13 @@ pip install git+https://github.com/rcarmo/textual-webterm.git
 Serve your default shell:
 
 ```bash
-textual-webterm
+webterm
 ```
 
 Serve a specific command:
 
 ```bash
-textual-webterm htop
-```
-
-### Serve a Textual App
-
-Serve a Textual app from an installed module:
-
-```bash
-textual-webterm --app mypackage.mymodule:MyApp
-```
-
-Serve a Textual app from a Python file:
-
-```bash
-textual-webterm --app ./calculator.py:CalculatorApp
+webterm htop
 ```
 
 ### Options
@@ -84,14 +61,14 @@ textual-webterm --app ./calculator.py:CalculatorApp
 Specify host and port:
 
 ```bash
-textual-webterm --host 0.0.0.0 --port 8080 bash
+webterm --host 0.0.0.0 --port 8080 bash
 ```
 
 Customize theme and font:
 
 ```bash
-textual-webterm --theme dracula --font-size 18
-textual-webterm --theme nord --font-family "JetBrains Mono, monospace"
+webterm --theme dracula --font-size 18
+webterm --theme nord --font-family "JetBrains Mono, monospace"
 ```
 
 Available themes: `xterm` (default), `monokai`, `dark`, `light`, `dracula`, `catppuccin`, `nord`, `gruvbox`, `solarized`, `tokyo`.
@@ -111,7 +88,7 @@ You can serve a dashboard with multiple terminal tiles driven by a YAML manifest
 Run with:
 
 ```bash
-textual-webterm --landing-manifest landing.yaml
+webterm --landing-manifest landing.yaml
 ```
 
 ### Docker Watch Mode
@@ -119,7 +96,7 @@ textual-webterm --landing-manifest landing.yaml
 Watch for Docker containers with the `webterm-command` label and dynamically add/remove terminal sessions:
 
 ```bash
-textual-webterm --docker-watch
+webterm --docker-watch
 ```
 
 When a container starts with the label, it automatically appears in the dashboard. When it stops, it's removed. Label values:
@@ -159,7 +136,7 @@ services:
 Start with:
 
 ```bash
-textual-webterm --compose-manifest compose.yaml
+webterm --compose-manifest compose.yaml
 ```
 
 In compose mode, the dashboard displays **CPU sparklines** showing 30 minutes of container CPU usage history (requires access to Docker socket at `/var/run/docker.sock`).
@@ -175,17 +152,15 @@ In compose mode, the dashboard displays **CPU sparklines** showing 30 minutes of
 ## CLI Reference
 
 ```
-Usage: textual-webterm [OPTIONS] [COMMAND]
+Usage: webterm [OPTIONS] [COMMAND]
 
-  Serve a terminal or Textual app over HTTP/WebSocket.
+  Serve a terminal over HTTP/WebSocket.
 
   COMMAND: Shell command to run in terminal (default: $SHELL)
 
 Options:
   -H, --host TEXT               Host to bind to [default: 0.0.0.0]
   -p, --port INTEGER            Port to bind to [default: 8080]
-  -a, --app TEXT                Load a Textual app from module:ClassName
-                                Examples: 'mymodule:MyApp' or './app.py:MyApp'
   -L, --landing-manifest PATH   YAML manifest describing landing page tiles
                                 (slug/name/command).
   -C, --compose-manifest PATH   Docker compose YAML; services with label
@@ -218,8 +193,8 @@ Options:
 ### Setup (Makefile-first)
 
 ```bash
-git clone https://github.com/rcarmo/textual-webterm.git
-cd textual-webterm
+git clone https://github.com/rcarmo/webterm.git
+cd webterm
 
 # Install with dev dependencies via Makefile
 make install-dev
@@ -265,13 +240,14 @@ make bundle-watch
 ### Notes
 
 - WebSocket protocol (browser ↔ server) is JSON: `["stdin", data]`, `["resize", {"width": w, "height": h}]`, `["ping", data]`.
-- Frontend source is in `src/textual_webterm/static/js/terminal.ts`.
+- Frontend source is in `src/webterm/static/js/terminal.ts`.
 - Screenshots use [pyte](https://github.com/selectel/pyte) for ANSI interpretation and custom SVG rendering.
 - CPU stats are read directly from Docker socket using asyncio (no additional dependencies).
 
 ## Requirements
 
 - Python 3.9+
+- Bun
 - Linux or macOS
 
 ## License
@@ -282,5 +258,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [ghostty-web](https://github.com/rcarmo/ghostty-web) - Patched Ghostty terminal for the web (vendored fork with theme support)
 - [ghostty-web upstream](https://github.com/coder/ghostty-web) - Original Ghostty terminal for the web
-- [Textual](https://github.com/Textualize/textual) - TUI framework for Python (legacy support)
 - [pyte](https://github.com/selectel/pyte) - PYTE terminal emulator (used for SVG screenshots)

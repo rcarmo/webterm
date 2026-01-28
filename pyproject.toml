@@ -1,15 +1,15 @@
 [tool.poetry]
-name = "textual-webterm"
-version = "1.0.1"
+name = "webterm"
+version = "1.1.0"
 description = "Serve terminal sessions over the web"
 authors = ["Will McGugan <will@textualize.io>"]
 license = "MIT"
 readme = "README.md"
-packages = [{include = "textual_webterm", from = "src"}]
+packages = [{include = "webterm", from = "src"}]
 include = [
-    { path = "src/textual_webterm/static/monospace.css" },
-    { path = "src/textual_webterm/static/js/terminal.js" },
-    { path = "src/textual_webterm/static/js/ghostty-vt.wasm" },
+    { path = "src/webterm/static/monospace.css" },
+    { path = "src/webterm/static/js/terminal.js" },
+    { path = "src/webterm/static/js/ghostty-vt.wasm" },
 ]
 
 [tool.poetry.dependencies]
@@ -35,7 +35,7 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-textual-webterm = "textual_webterm.cli:app"
+webterm = "webterm.cli:app"
 
 [tool.ruff]
 line-length = 100
@@ -71,7 +71,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["textual_webterm"]
+known-first-party = ["webterm"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -95,7 +95,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/textual_webterm"]
+source = ["src/webterm"]
 branch = true
 omit = [
     "*/tests/*",

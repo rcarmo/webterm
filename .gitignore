@@ -7,6 +7,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyi
 
 # C extensions
 *.so
@@ -122,14 +123,20 @@ dmypy.json
 # pyright
 .pyright/
 
+# cache / build artifacts
+.cache/
+.coverage
+htmlcov/
+
 # pdm
 .pdm.toml
 .pdm-python
 .pdm-build/
 
-# textual-webterm specific
-textual.log
+# webterm specific
+webterm.log
 
 # Node.js / Bun (for development only)
 node_modules/
 bun.lockb
+package-lock.json

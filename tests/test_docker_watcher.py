@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from textual_webterm.docker_watcher import DEFAULT_COMMAND, LABEL_NAME, DockerWatcher
+from webterm.docker_watcher import DEFAULT_COMMAND, LABEL_NAME, DockerWatcher
 
 
 @pytest.fixture
@@ -262,6 +262,6 @@ async def test_watch_events_recovers_from_errors(docker_watcher, monkeypatch):
     async def fake_sleep(_seconds):
         return None
 
-    monkeypatch.setattr("textual_webterm.docker_watcher.asyncio.open_unix_connection", fail_once)
-    monkeypatch.setattr("textual_webterm.docker_watcher.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("webterm.docker_watcher.asyncio.open_unix_connection", fail_once)
+    monkeypatch.setattr("webterm.docker_watcher.asyncio.sleep", fake_sleep)
     await docker_watcher._watch_events()

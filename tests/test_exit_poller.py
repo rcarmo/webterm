@@ -5,8 +5,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_exit_poller_noop_when_idle_wait_zero(monkeypatch):
-    from textual_webterm import exit_poller
-    from textual_webterm.exit_poller import ExitPoller
+    from webterm import exit_poller
+    from webterm.exit_poller import ExitPoller
 
     monkeypatch.setattr(exit_poller, "EXIT_POLL_RATE", 0.01)
 
@@ -32,8 +32,8 @@ async def test_exit_poller_noop_when_idle_wait_zero(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_exit_poller_resets_idle_timer_when_session_appears(monkeypatch):
-    from textual_webterm import exit_poller
-    from textual_webterm.exit_poller import ExitPoller
+    from webterm import exit_poller
+    from webterm.exit_poller import ExitPoller
 
     monkeypatch.setattr(exit_poller, "EXIT_POLL_RATE", 0.01)
 

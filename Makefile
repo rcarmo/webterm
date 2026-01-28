@@ -4,7 +4,7 @@ PYTHON ?= python3
 PIP ?= $(PYTHON) -m pip
 
 # Static assets
-STATIC_JS_DIR = src/textual_webterm/static/js
+STATIC_JS_DIR = src/webterm/static/js
 TERMINAL_JS = $(STATIC_JS_DIR)/terminal.js
 TERMINAL_TS = $(STATIC_JS_DIR)/terminal.ts
 GHOSTTY_WASM = $(STATIC_JS_DIR)/ghostty-vt.wasm
@@ -60,7 +60,7 @@ test:
 	pytest
 
 coverage:
-	pytest --cov=src/textual_webterm --cov-report=term-missing
+	pytest --cov=src/webterm --cov-report=term-missing
 
 check: lint coverage
 

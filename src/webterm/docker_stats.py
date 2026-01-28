@@ -14,7 +14,7 @@ import socket
 from collections import deque
 from pathlib import Path
 
-log = logging.getLogger("textual-webterm")
+log = logging.getLogger("webterm")
 
 DEFAULT_DOCKER_SOCKET = "/var/run/docker.sock"
 

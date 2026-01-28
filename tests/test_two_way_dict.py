@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from textual_webterm._two_way_dict import TwoWayDict
+from webterm._two_way_dict import TwoWayDict
 
 
 class TestTwoWayDict:

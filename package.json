@@ -1,18 +1,18 @@
 {
-  "name": "textual-webterm-frontend",
+  "name": "webterm-frontend",
   "private": true,
   "type": "module",
   "dependencies": {
-    "ghostty-web": "github:rcarmo/ghostty-web"
+    "ghostty-web": "github:rcarmo/ghostty-web#2837b81646aa0c00bb5a2881b5a53400346c76de"
   },
   "devDependencies": {
     "typescript": "^5.7.0"
   },
   "scripts": {
-    "build": "bun run typecheck && bun build src/textual_webterm/static/js/terminal.ts --outfile=src/textual_webterm/static/js/terminal.js --minify --target=browser && cp node_modules/ghostty-web/ghostty-vt.wasm src/textual_webterm/static/js/",
-    "build:fast": "bun build src/textual_webterm/static/js/terminal.ts --outfile=src/textual_webterm/static/js/terminal.js --minify --target=browser",
-    "watch": "bun build src/textual_webterm/static/js/terminal.ts --outfile=src/textual_webterm/static/js/terminal.js --watch --target=browser",
+    "build": "bun run typecheck && bun build src/webterm/static/js/terminal.ts --outfile=src/webterm/static/js/terminal.js --minify --target=browser && cp node_modules/ghostty-web/ghostty-vt.wasm src/webterm/static/js/",
+    "build:fast": "bun build src/webterm/static/js/terminal.ts --outfile=src/webterm/static/js/terminal.js --minify --target=browser",
+    "watch": "bun build src/webterm/static/js/terminal.ts --outfile=src/webterm/static/js/terminal.js --watch --target=browser",
     "typecheck": "bun x tsc --noEmit -p tsconfig.json",
-    "copy-wasm": "cp node_modules/ghostty-web/ghostty-vt.wasm src/textual_webterm/static/js/"
+    "copy-wasm": "cp node_modules/ghostty-web/ghostty-vt.wasm src/webterm/static/js/"
   }
 }

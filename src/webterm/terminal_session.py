@@ -14,7 +14,7 @@ from collections import deque
 from typing import TYPE_CHECKING
 
 import pyte
-from importlib_metadata import version
+from importlib_metadata import PackageNotFoundError, version
 
 from .session import Session, SessionConnector
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from .poller import Poller
     from .types import Meta, SessionID
 
-log = logging.getLogger("textual-web")
+log = logging.getLogger("webterm")
 
 # Maximum bytes to keep in replay buffer for reconnection
 REPLAY_BUFFER_SIZE = 256 * 1024  # 256KB
@@ -62,6 +62,13 @@ class TerminalSession(Session):
     def __repr__(self) -> str:
         return f"TerminalSession(session_id={self.session_id!r}, command={self.command!r})"
 
+    @staticmethod
+    def _package_version() -> str:
+        try:
+            return version("webterm")
+        except PackageNotFoundError:
+            return "0.0.0"
+
     async def open(self, width: int = 80, height: int = 24) -> None:
         log.info("Opening terminal session %s with command: %s", self.session_id, self.command)
         # Track the initial size
@@ -76,8 +83,8 @@ class TerminalSession(Session):
         self.pid = pid
         self.master_fd = master_fd
         if pid == pty.CHILD:
-            os.environ["TERM_PROGRAM"] = "textual-webterm"
-            os.environ["TERM_PROGRAM_VERSION"] = version("textual-webterm")
+            os.environ["TERM_PROGRAM"] = "webterm"
+            os.environ["TERM_PROGRAM_VERSION"] = self._package_version()
             try:
                 argv = shlex.split(self.command)
             except ValueError:

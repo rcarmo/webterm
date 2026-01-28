@@ -44,4 +44,4 @@ Option 2 would be cleanest as it separates parsing from rendering.
 - Browser: All
 
 ---
-*Filed from textual-webterm project where we encountered this while implementing theme support*
+*Filed from webterm project where we encountered this while implementing theme support*

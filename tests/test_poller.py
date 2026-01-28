@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from textual_webterm.poller import Poller, Write
+from webterm.poller import Poller, Write
 
 
 class TestWrite:

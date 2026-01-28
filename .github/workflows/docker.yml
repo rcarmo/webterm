@@ -20,7 +20,7 @@ jobs:
           - runner: ubuntu-latest
             platform: linux/amd64
             suffix: amd64
-          - runner: ubuntu-24.04-arm
+          - runner: ubuntu-24.04-arm64
             platform: linux/arm64
             suffix: arm64
 

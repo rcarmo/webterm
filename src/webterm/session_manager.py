@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from . import config, constants
 from ._two_way_dict import TwoWayDict
-from .app_session import AppSession
 from .identity import generate
 
 if TYPE_CHECKING:
@@ -18,7 +17,7 @@ if TYPE_CHECKING:
     from .types import RouteKey, SessionID
 
 
-log = logging.getLogger("textual-web")
+log = logging.getLogger("webterm")
 
 
 if not constants.WINDOWS:
@@ -26,7 +25,7 @@ if not constants.WINDOWS:
 
 
 class SessionManager:
-    """Manage sessions (Textual apps or terminals)."""
+    """Manage terminal sessions."""
 
     def __init__(self, poller: Poller, path: Path, apps: list[config.App]) -> None:
         self.poller = poller
@@ -122,24 +121,16 @@ class SessionManager:
             return None
 
         session_process: Session
-        if app.terminal:
-            if constants.WINDOWS:
-                log.warning("Sorry, textual-web does not currently support terminals on Windows")
-                return None
-            else:
-                session_process = TerminalSession(
-                    self.poller,
-                    session_id,
-                    app.command,
-                )
-                log.info("Created terminal session %s", session_id)
-        else:
-            session_process = AppSession(
-                self.path,
-                app.command,
-                session_id,
-            )
-            log.info("Created app session %s", session_id)
+        if constants.WINDOWS:
+            log.warning("Sorry, webterm does not currently support terminals on Windows")
+            return None
+
+        session_process = TerminalSession(
+            self.poller,
+            session_id,
+            app.command,
+        )
+        log.info("Created terminal session %s", session_id)
 
         # Open the session BEFORE registering it, so it's fully initialized
         # when other code can access it via sessions/routes dicts

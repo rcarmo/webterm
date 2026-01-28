@@ -27,7 +27,7 @@ from .types import Meta, RouteKey, SessionID
 if TYPE_CHECKING:
     from .config import Config
 
-log = logging.getLogger("textual-web")
+log = logging.getLogger("webterm")
 
 DEFAULT_TERMINAL_SIZE = (132, 45)
 
@@ -127,7 +127,7 @@ class LocalServer:
             return 5.0
         return SCREENSHOT_MAX_CACHE_SECONDS
 
-    """Manages local Textual apps and terminals without Ganglion server."""
+    """Manages local terminal sessions without Ganglion server."""
 
     def __init__(
         self,
@@ -194,7 +194,7 @@ class LocalServer:
 
     def add_terminal(self, name: str, command: str, slug: str = "") -> None:
         if constants.WINDOWS:
-            log.warning("Sorry, textual-web does not currently support terminals on Windows")
+            log.warning("Sorry, webterm does not currently support terminals on Windows")
             return
         slug = slug or generate().lower()
         self.session_manager.add_app(name, command, slug=slug, terminal=True)
@@ -571,7 +571,7 @@ class LocalServer:
                     screen_buffer,
                     width=screen_width,
                     height=screen_height,
-                    title="textual-webterm",
+                    title="webterm",
                 )
 
             svg = await asyncio.to_thread(_render_svg)
@@ -944,11 +944,11 @@ class LocalServer:
             html_content = """<!DOCTYPE html>
 <html>
 <head>
-    <title>Textual Web Terminal Server</title>
+    <title>Webterm Server</title>
 </head>
 <body>
     <h2>No Apps Available</h2>
-    <p>No terminal or Textual applications are configured.</p>
+    <p>No terminal applications are configured.</p>
 </body>
 </html>"""
             return web.Response(text=html_content, content_type="text/html")
@@ -965,14 +965,17 @@ class LocalServer:
             route_key = RouteKey(generate().lower())
 
         ws_url = self._get_ws_url_from_request(request, route_key)
-        page_title = available_app.name if available_app else "Textual Web Terminal"
+        page_title = available_app.name if available_app else "Webterm"
 
         # Build data attributes for terminal configuration
-        data_attrs = f'data-session-websocket-url="{ws_url}" data-font-size="{self.font_size}" data-scrollback="1000" data-theme="{self.theme}"'
-        if self.font_family:
-            # Escape quotes for HTML attribute
-            escaped_font = self.font_family.replace('"', "&quot;")
-            data_attrs += f' data-font-family="{escaped_font}"'
+        data_attrs = (
+            f'data-session-websocket-url="{ws_url}" data-font-size="{self.font_size}" '
+            f'data-scrollback="1000" data-theme="{self.theme}"'
+        )
+        font_family = self.font_family or "var(--webterm-mono)"
+        # Escape quotes for HTML attribute
+        escaped_font = font_family.replace('"', "&quot;")
+        data_attrs += f' data-font-family="{escaped_font}"'
 
         # Get theme background color (fallback to black if unknown theme)
         theme_bg = THEME_BACKGROUNDS.get(self.theme.lower(), "#000000")
@@ -985,11 +988,11 @@ class LocalServer:
     <style>
       html, body {{ width: 100%; height: 100%; }}
       body {{ background: {theme_bg}; margin: 0; padding: 0; overflow: hidden; }}
-      .textual-terminal {{ width: 100%; height: 100%; display: block; overflow: hidden; }}
+      .webterm-terminal {{ width: 100%; height: 100%; display: block; overflow: hidden; }}
     </style>
 </head>
 <body>
-    <div id=\"terminal\" class=\"textual-terminal\" {data_attrs}></div>
+    <div id=\"terminal\" class=\"webterm-terminal\" {data_attrs}></div>
     <script type=\"module\" src=\"/static/js/terminal.js\"></script>
 </body>
 </html>"""

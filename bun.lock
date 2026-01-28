@@ -3,9 +3,9 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "textual-webterm-frontend",
+      "name": "webterm-frontend",
       "dependencies": {
-        "ghostty-web": "^0.1.0",
+        "ghostty-web": "github:rcarmo/ghostty-web#2837b81646aa0c00bb5a2881b5a53400346c76de",
       },
       "devDependencies": {
         "typescript": "^5.7.0",
@@ -13,7 +13,7 @@
     },
   },
   "packages": {
-    "ghostty-web": ["ghostty-web@0.1.1", "", {}, "sha512-uPlk+EDNtA0uS47yxsn9VpRIFC57rm1zoRf1vCZ0Lh8DN5kw+Szyof591G+RFYNBqL1FJxMFGVzVjY8ykzteiw=="],
+    "ghostty-web": ["ghostty-web@github:rcarmo/ghostty-web#2837b81646aa0c00bb5a2881b5a53400346c76de", {}, "rcarmo-ghostty-web-2837b81646aa0c00bb5a2881b5a53400346c76de"],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
   }

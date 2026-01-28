@@ -1,1 +1,1 @@
-"""Tests for textual-webterm."""
+"""Tests for webterm."""

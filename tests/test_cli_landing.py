@@ -3,9 +3,10 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
+from webterm import cli
+
 
 def test_cli_landing_manifest_runs(monkeypatch, tmp_path: Path):
-    from textual_webterm import cli
 
     manifest = tmp_path / "landing.yaml"
     manifest.write_text(
@@ -39,7 +40,6 @@ def test_cli_landing_manifest_runs(monkeypatch, tmp_path: Path):
 
 
 def test_cli_compose_manifest_runs(monkeypatch, tmp_path: Path):
-    from textual_webterm import cli
 
     manifest = tmp_path / "compose.yaml"
     manifest.write_text(

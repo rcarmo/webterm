@@ -67,9 +67,9 @@ Modified:
 No action required. The pre-built `terminal.js` bundle is committed to the repo:
 
 ```bash
-pip install textual-webterm
+pip install webterm
 # or
-pip install git+https://github.com/rcarmo/textual-webterm.git
+pip install git+https://github.com/rcarmo/webterm.git
 ```
 
 Works without needing Node.js or Bun.
@@ -183,7 +183,7 @@ The protocol is simple JSON arrays. Our server already implements this:
 **Goal**: Establish Bun-based build pipeline
 
 ```
-src/textual_webterm/
+src/webterm/
 ├── static/
 │   ├── js/
 │   │   └── terminal.ts      # New: our xterm wrapper
@@ -204,7 +204,7 @@ src/textual_webterm/
 **package.json** (final):
 ```json
 {
-  "name": "textual-webterm-frontend",
+  "name": "webterm-frontend",
   "private": true,
   "type": "module",
   "dependencies": {
@@ -220,8 +220,8 @@ src/textual_webterm/
     "typescript": "^5.7.0"
   },
   "scripts": {
-    "build": "bun build src/textual_webterm/static/js/terminal.ts --outfile=src/textual_webterm/static/js/terminal.js --minify --target=browser",
-    "watch": "bun build src/textual_webterm/static/js/terminal.ts --outfile=src/textual_webterm/static/js/terminal.js --watch --target=browser"
+    "build": "bun build src/webterm/static/js/terminal.ts --outfile=src/webterm/static/js/terminal.js --minify --target=browser",
+    "watch": "bun build src/webterm/static/js/terminal.ts --outfile=src/webterm/static/js/terminal.js --watch --target=browser"
   }
 }
 ```
@@ -237,7 +237,7 @@ src/textual_webterm/
 - [x] Addon initialization (fit, webgl, canvas, unicode11, web-links, clipboard)
 - [x] Configurable options via data attributes or window config
 
-See `src/textual_webterm/static/js/terminal.ts` for the full implementation (~230 lines).
+See `src/webterm/static/js/terminal.ts` for the full implementation (~230 lines).
 
 ### Phase 3: Server Integration ✅
 
@@ -298,7 +298,7 @@ bundle-watch: node_modules
 	bun run watch
 
 bundle-clean:
-	rm -rf node_modules src/textual_webterm/static/js/terminal.js
+	rm -rf node_modules src/webterm/static/js/terminal.js
 
 node_modules: package.json
 	bun install
@@ -314,7 +314,7 @@ ENV PATH="/root/.bun/bin:${PATH}"
 # Build frontend
 COPY package.json bunfig.toml ./
 RUN bun install
-COPY src/textual_webterm/static/js/terminal.ts src/textual_webterm/static/js/
+COPY src/webterm/static/js/terminal.ts src/webterm/static/js/
 RUN bun run build
 ```
 
@@ -377,11 +377,11 @@ RUN bun run build
 
 # Future: Go Reimplementation
 
-This section analyzes what it would take to reimplement textual-webterm in Go for lighter deployment.
+This section analyzes what it would take to reimplement webterm in Go for lighter deployment.
 
 ## Status: 📋 Planning
 
-Not yet started. This would be a separate project (`textual-webterm-go`) providing a lightweight alternative.
+Not yet started. This would be a separate project (`webterm-go`) providing a lightweight alternative.
 
 ## Executive Summary
 
@@ -407,7 +407,7 @@ Not yet started. This would be a separate project (`textual-webterm-go`) providi
 
 ## pyte vs GoPyte: Thorough Comparison
 
-This section compares the Python **pyte** terminal emulator and the Go **GoPyte** emulator (per their upstream documentation/README). The focus is on capture accuracy, Unicode handling, performance expectations, and integration risk for textual-webterm. Where GoPyte details are unclear, we call them out explicitly as validation items.
+This section compares the Python **pyte** terminal emulator and the Go **GoPyte** emulator (per their upstream documentation/README). The focus is on capture accuracy, Unicode handling, performance expectations, and integration risk for webterm. Where GoPyte details are unclear, we call them out explicitly as validation items.
 
 ### Feature Matrix (Capture-Relevant)
 
@@ -468,7 +468,7 @@ This section compares the Python **pyte** terminal emulator and the Go **GoPyte*
 
 **Action**: Benchmark with fast-output scenarios, large scrollback, and frequent screenshots.
 
-### Required Features for textual-webterm Capture
+### Required Features for webterm Capture
 
 We depend on the emulator for **accurate snapshot state**, not just live display:
 
@@ -513,7 +513,7 @@ Before relying on GoPyte for parity, verify:
 - [ ] Resize correctness (content preservation, cursor placement).
 - [ ] Performance at high output rates (100k+ lines, low latency).
 
-### Integration Implications for textual-webterm
+### Integration Implications for webterm
 
 - **Screen buffer mapping**: GoPyte cells must map to our SVG exporter schema (fg/bg/bold/underline/reverse).
 - **Dirty tracking**: pyte exposes dirty state; GoPyte may need explicit diff tracking.
@@ -546,7 +546,7 @@ These alternatives still need capture parity validation.
 
 | Loss | Impact |
 |------|--------|
-| **Textual app support** | Cannot run Python Textual apps directly |
+| **Textual app support** | Removed in webterm |
 | **Rapid prototyping** | Go requires more boilerplate |
 | **pyte maturity** | GoPyte is less proven |
 
@@ -556,7 +556,7 @@ These alternatives still need capture parity validation.
 
 ```go
 // go.mod
-module github.com/rcarmo/textual-webterm-go
+module github.com/rcarmo/webterm-go
 
 go 1.22
 
@@ -771,7 +771,7 @@ README.md             # Usage docs
 ## File Structure (Final)
 
 ```
-textual-webterm-go/
+webterm-go/
 ├── cmd/
 │   └── webterm/
 │       └── main.go
@@ -867,7 +867,7 @@ ENTRYPOINT ["/webterm"]
 Proceed with Go reimplementation if:
 
 - [ ] Deployment size is critical (embedded, edge, IoT)
-- [ ] No need for Textual app support
+- [x] No need for Textual app support
 - [ ] Want single-binary distribution
 - [ ] Memory constraints matter
 

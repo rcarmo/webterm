@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from textual_webterm.config import load_compose_manifest, load_landing_yaml
+from webterm.config import load_compose_manifest, load_landing_yaml
 
 
 def test_load_landing_yaml_simple():

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from textual_webterm.docker_stats import (
+from webterm.docker_stats import (
     STATS_HISTORY_SIZE,
     DockerStatsCollector,
     render_sparkline_svg,
@@ -177,8 +177,8 @@ class TestLocalServerSparklineEndpoint:
         """Missing container param returns 400."""
         from aiohttp.web import HTTPBadRequest
 
-        from textual_webterm.config import Config
-        from textual_webterm.local_server import LocalServer
+        from webterm.config import Config
+        from webterm.local_server import LocalServer
 
         server = LocalServer("./", Config(), compose_mode=True)
 
@@ -191,8 +191,8 @@ class TestLocalServerSparklineEndpoint:
     @pytest.mark.asyncio
     async def test_sparkline_endpoint_returns_svg(self):
         """Sparkline endpoint returns SVG."""
-        from textual_webterm.config import Config
-        from textual_webterm.local_server import LocalServer
+        from webterm.config import Config
+        from webterm.local_server import LocalServer
 
         server = LocalServer("./", Config(), compose_mode=True)
 
@@ -206,8 +206,8 @@ class TestLocalServerSparklineEndpoint:
     @pytest.mark.asyncio
     async def test_sparkline_with_stats_collector(self):
         """Sparkline uses stats collector data when available."""
-        from textual_webterm.config import Config
-        from textual_webterm.local_server import LocalServer
+        from webterm.config import Config
+        from webterm.local_server import LocalServer
 
         server = LocalServer("./", Config(), compose_mode=True)
         server._docker_stats = MagicMock()

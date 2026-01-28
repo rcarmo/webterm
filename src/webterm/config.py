@@ -31,7 +31,6 @@ class Config(BaseModel):
     """Root configuration model."""
 
     apps: list[App] = Field(default_factory=list)
-    landing: list[App] = Field(default_factory=list)
 
 
 def default_config() -> Config:
@@ -65,11 +64,12 @@ def load_config(config_path: Path) -> Config:
 
         return App(**data)
 
-    apps = [make_app(name, app) for name, app in config_data.get("app", {}).items()]
+    terminal_entries = config_data.get("terminal", {})
+    app_entries = config_data.get("app", {})
+    if app_entries:
+        raise ValueError("App manifests are no longer supported; use [terminal.*] entries only.")
 
-    apps += [
-        make_app(name, app, terminal=True) for name, app in config_data.get("terminal", {}).items()
-    ]
+    apps = [make_app(name, app, terminal=True) for name, app in terminal_entries.items()]
 
     config = Config(apps=apps)
 
