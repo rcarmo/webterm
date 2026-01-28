@@ -22,13 +22,7 @@ html, body {
   font-family: var(--textual-webterm-mono);
 }
 
-/*
-  textual_serve's bundled textual.js hard-codes xterm's Terminal fontFamily:
-  "'Roboto Mono', Monaco, 'Courier New', monospace".
-
-  If Roboto Mono isn't available, it falls back to Courier and looks wrong.
-  We override that here with higher specificity + !important.
-*/
+/* Terminal container - works with ghostty-web canvas renderer */
 .textual-terminal {
   width: 100%;
   height: 100%;
@@ -41,51 +35,27 @@ html, body {
   contain: strict; /* Performance optimization */
 }
 
-.textual-terminal .xterm,
-.textual-terminal .xterm .xterm-rows,
-.textual-terminal .xterm .xterm-helper-textarea,
-.textual-terminal .xterm .xterm-viewport,
-.textual-terminal .xterm .xterm-screen {
-  font-family: var(--textual-webterm-mono) !important;
-}
-
-/* Critical layout fixes for xterm.js */
-.textual-terminal .xterm {
+/* ghostty-web renders to a canvas element */
+.textual-terminal canvas {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
+  display: block;
   width: 100%;
   height: 100%;
 }
 
-.textual-terminal .xterm .xterm-viewport {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  position: relative;
-  overflow: hidden;
-  width: 100%;
-  height: 100%;
-}
-
-.textual-terminal .xterm .xterm-screen {
+/* Hidden textarea for keyboard input */
+.textual-terminal textarea {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* High DPI display handling */
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
   .textual-terminal {
-    /* Consider adjusting font sizes for high DPI */
-    font-size: 14px;
+    /* ghostty-web handles DPI scaling via devicePixelRatio */
   }
 }
 

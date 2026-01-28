@@ -113,8 +113,12 @@ class WebTerminal {
 
   /** Initialize event handlers and connect */
   private initialize(): void {
-    // Fit to container
-    this.fitAddon.fit();
+    // Wait for fonts to load before fitting to ensure correct measurements
+    this.waitForFonts().then(() => {
+      this.fitAddon.fit();
+    });
+    
+    // Start observing resize immediately
     this.fitAddon.observeResize();
 
     // Handle window resize (some browsers don't trigger ResizeObserver on window resize)
@@ -137,6 +141,18 @@ class WebTerminal {
 
     // Connect WebSocket
     this.connect();
+  }
+
+  /** Wait for fonts to be loaded */
+  private async waitForFonts(): Promise<void> {
+    if (!("fonts" in document)) {
+      return;
+    }
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Ignore font loading errors
+    }
   }
 
   /** Validate terminal dimensions */
