@@ -1,4 +1,4 @@
-.PHONY: help install install-dev lint format test coverage check clean clean-all build build-all bundle bundle-watch bundle-clean bump-patch
+.PHONY: help install install-dev lint format test coverage check clean clean-all build build-all bundle bundle-watch bundle-clean typecheck bump-patch
 
 PYTHON ?= python3
 PIP ?= $(PYTHON) -m pip
@@ -12,9 +12,11 @@ GHOSTTY_WASM = $(STATIC_JS_DIR)/ghostty-vt.wasm
 help:
 	@echo "Build targets:"
 	@echo "  build-all    - Full reproducible build (clean + deps + bundle + install)"
-	@echo "  build        - Build frontend only (bundle)"
-	@echo "  bundle       - Build terminal.js and copy WASM"
+	@echo "  build        - Build frontend (typecheck + bundle)"
+	@echo "  build-fast   - Build frontend without typecheck"
+	@echo "  bundle       - Alias for build"
 	@echo "  bundle-watch - Watch mode for development"
+	@echo "  typecheck    - Run TypeScript type checking"
 	@echo ""
 	@echo "Python targets:"
 	@echo "  install      - Install package in editable mode"
@@ -34,7 +36,7 @@ help:
 # Full reproducible build
 # =============================================================================
 
-build-all: clean-all node_modules bundle install-dev check
+build-all: clean-all node_modules build install-dev check
 	@echo "Build complete!"
 
 # =============================================================================
@@ -64,6 +66,7 @@ check: lint coverage
 
 # =============================================================================
 # Frontend build targets (requires Bun: https://bun.sh)
+# All frontend commands MUST go through bun run to ensure consistency
 # =============================================================================
 
 # Install node dependencies (creates bun.lock if missing)
@@ -71,23 +74,26 @@ node_modules: package.json
 	bun install
 	@touch node_modules
 
-# Build terminal.js from TypeScript
-$(TERMINAL_JS): $(TERMINAL_TS) node_modules
-	bun build $(TERMINAL_TS) --outfile=$(TERMINAL_JS) --minify --target=browser
+# TypeScript type checking
+typecheck: node_modules
+	bun run typecheck
 
-# Copy WASM file from node_modules
-$(GHOSTTY_WASM): node_modules
-	cp node_modules/ghostty-web/ghostty-vt.wasm $(GHOSTTY_WASM)
+# Main build target - typecheck + bundle + copy WASM
+build: node_modules
+	bun run build
 
-# Main bundle target - builds JS and copies WASM
-bundle: $(TERMINAL_JS) $(GHOSTTY_WASM)
+# Fast build without typecheck (for rapid iteration)
+build-fast: node_modules
+	bun run build:fast
+	@test -f $(GHOSTTY_WASM) || bun run copy-wasm
 
-# Alias for bundle
-build: bundle
+# Alias for build
+bundle: build
 
 # Watch mode for development
-bundle-watch: $(GHOSTTY_WASM)
-	bun build $(TERMINAL_TS) --outfile=$(TERMINAL_JS) --watch --target=browser
+bundle-watch: node_modules
+	@test -f $(GHOSTTY_WASM) || bun run copy-wasm
+	bun run watch
 
 # =============================================================================
 # Clean targets

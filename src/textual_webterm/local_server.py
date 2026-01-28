@@ -38,6 +38,21 @@ CLEAR_AND_REDRAW_SEQ = "\x0c"  # Ctrl+L: clear and redraw
 
 WEBTERM_STATIC_PATH = Path(__file__).parent / "static"
 
+# Theme background colors - must match terminal.ts THEMES
+THEME_BACKGROUNDS: dict[str, str] = {
+    "xterm": "#000000",
+    "monokai": "#2d2a2e",
+    "ristretto": "#2d2525",
+    "dark": "#1e1e1e",
+    "light": "#ffffff",
+    "dracula": "#282a36",
+    "catppuccin": "#1e1e2e",
+    "nord": "#2e3440",
+    "solarized-dark": "#002b36",
+    "solarized-light": "#fdf6e3",
+    "tokyo-night": "#1a1b26",
+}
+
 
 class LocalClientConnector(SessionConnector):
     """Local connector that handles communication between sessions and local server."""
@@ -855,6 +870,9 @@ class LocalServer:
             escaped_font = self.font_family.replace('"', "&quot;")
             data_attrs += f' data-font-family="{escaped_font}"'
 
+        # Get theme background color (fallback to black if unknown theme)
+        theme_bg = THEME_BACKGROUNDS.get(self.theme.lower(), "#000000")
+
         html_content = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -862,7 +880,7 @@ class LocalServer:
     <link rel=\"stylesheet\" href=\"/static/monospace.css\">
     <style>
       html, body {{ width: 100%; height: 100%; }}
-      body {{ background: #0c181f; margin: 0; padding: 0; overflow: hidden; }}
+      body {{ background: {theme_bg}; margin: 0; padding: 0; overflow: hidden; }}
       .textual-terminal {{ width: 100%; height: 100%; display: block; overflow: hidden; }}
     </style>
 </head>

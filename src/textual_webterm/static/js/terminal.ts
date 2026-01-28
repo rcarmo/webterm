@@ -22,7 +22,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#e5e5e5",
     cursor: "#e5e5e5",
     cursorAccent: "#000000",
-    selection: "#4d4d4d",
+    selectionBackground: "#4d4d4d",
     black: "#000000",
     red: "#cd0000",
     green: "#00cd00",
@@ -46,7 +46,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#fcfcfa",
     cursor: "#fcfcfa",
     cursorAccent: "#2d2a2e",
-    selection: "#5b595c",
+    selectionBackground: "#5b595c",
     black: "#403e41",
     red: "#ff6188",
     green: "#a9dc76",
@@ -70,7 +70,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#fff1f3",
     cursor: "#fff1f3",
     cursorAccent: "#2d2525",
-    selection: "#403838",
+    selectionBackground: "#403838",
     black: "#2c2525",
     red: "#fd6883",
     green: "#adda78",
@@ -94,7 +94,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#d4d4d4",
     cursor: "#aeafad",
     cursorAccent: "#1e1e1e",
-    selection: "#264f78",
+    selectionBackground: "#264f78",
     black: "#000000",
     red: "#cd3131",
     green: "#0dbc79",
@@ -117,7 +117,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#383a42",
     cursor: "#526eff",
     cursorAccent: "#ffffff",
-    selection: "#add6ff",
+    selectionBackground: "#add6ff",
     black: "#000000",
     red: "#e45649",
     green: "#50a14f",
@@ -140,7 +140,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#f8f8f2",
     cursor: "#f8f8f2",
     cursorAccent: "#282a36",
-    selection: "#44475a",
+    selectionBackground: "#44475a",
     black: "#21222c",
     red: "#ff5555",
     green: "#50fa7b",
@@ -163,7 +163,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#cdd6f4",
     cursor: "#f5e0dc",
     cursorAccent: "#1e1e2e",
-    selection: "#45475a",
+    selectionBackground: "#45475a",
     black: "#45475a",
     red: "#f38ba8",
     green: "#a6e3a1",
@@ -186,7 +186,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#d8dee9",
     cursor: "#d8dee9",
     cursorAccent: "#2e3440",
-    selection: "#434c5e",
+    selectionBackground: "#434c5e",
     black: "#3b4252",
     red: "#bf616a",
     green: "#a3be8c",
@@ -209,7 +209,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#ebdbb2",
     cursor: "#ebdbb2",
     cursorAccent: "#282828",
-    selection: "#504945",
+    selectionBackground: "#504945",
     black: "#282828",
     red: "#cc241d",
     green: "#98971a",
@@ -232,7 +232,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#839496",
     cursor: "#839496",
     cursorAccent: "#002b36",
-    selection: "#073642",
+    selectionBackground: "#073642",
     black: "#073642",
     red: "#dc322f",
     green: "#859900",
@@ -255,7 +255,7 @@ const THEMES: Record<string, ITheme> = {
     foreground: "#a9b1d6",
     cursor: "#c0caf5",
     cursorAccent: "#1a1b26",
-    selection: "#33467c",
+    selectionBackground: "#33467c",
     black: "#15161e",
     red: "#f7768e",
     green: "#9ece6a",
@@ -285,31 +285,45 @@ interface TerminalConfig {
 
 /** Parse configuration from element data attributes */
 function parseConfig(element: HTMLElement): TerminalConfig {
+  console.log("[webterm:parseConfig] Parsing config from element");
   const config: TerminalConfig = {};
 
   if (element.dataset.fontFamily) {
     config.fontFamily = element.dataset.fontFamily;
+    console.log(`[webterm:parseConfig] fontFamily: "${config.fontFamily}"`);
   }
   if (element.dataset.fontSize) {
     config.fontSize = parseInt(element.dataset.fontSize, 10);
+    console.log(`[webterm:parseConfig] fontSize: ${config.fontSize}`);
   }
   if (element.dataset.scrollback) {
     config.scrollback = parseInt(element.dataset.scrollback, 10);
+    console.log(`[webterm:parseConfig] scrollback: ${config.scrollback}`);
   }
   if (element.dataset.theme) {
     const themeName = element.dataset.theme.toLowerCase();
+    console.log(`[webterm:parseConfig] theme attribute: "${element.dataset.theme}" -> normalized: "${themeName}"`);
+    console.log(`[webterm:parseConfig] Available themes: ${Object.keys(THEMES).join(", ")}`);
+    console.log(`[webterm:parseConfig] Theme "${themeName}" in THEMES? ${themeName in THEMES}`);
+    
     if (themeName in THEMES) {
       config.theme = THEMES[themeName];
+      console.log(`[webterm:parseConfig] Using built-in theme "${themeName}":`, JSON.stringify(config.theme, null, 2));
     } else {
       // Try parsing as JSON for custom themes
+      console.log(`[webterm:parseConfig] Theme not found in THEMES, trying JSON parse...`);
       try {
         config.theme = JSON.parse(element.dataset.theme) as ITheme;
-      } catch {
-        console.warn(`Unknown theme "${element.dataset.theme}", using default`);
+        console.log(`[webterm:parseConfig] Parsed custom JSON theme:`, config.theme);
+      } catch (e) {
+        console.warn(`[webterm:parseConfig] Unknown theme "${element.dataset.theme}", JSON parse failed:`, e);
       }
     }
+  } else {
+    console.log(`[webterm:parseConfig] No theme attribute found on element`);
   }
 
+  console.log(`[webterm:parseConfig] Final config:`, config);
   return config;
 }
 
@@ -354,17 +368,23 @@ class WebTerminal {
   private mobileKeybar: HTMLElement | null = null;
   private ctrlActive = false;
   private shiftActive = false;
+  private fontFamily: string;
+  private fontSize: number;
 
   private constructor(
     container: HTMLElement,
     wsUrl: string,
     terminal: Terminal,
-    fitAddon: FitAddon
+    fitAddon: FitAddon,
+    fontFamily: string,
+    fontSize: number
   ) {
     this.element = container;
     this.wsUrl = wsUrl;
     this.terminal = terminal;
     this.fitAddon = fitAddon;
+    this.fontFamily = fontFamily;
+    this.fontSize = fontSize;
   }
 
   /** Create and initialize a WebTerminal instance */
@@ -373,29 +393,71 @@ class WebTerminal {
     wsUrl: string,
     config: TerminalConfig
   ): Promise<WebTerminal> {
+    console.log("[webterm:create] WebTerminal.create() called");
+    console.log("[webterm:create] Container:", container);
+    console.log("[webterm:create] wsUrl:", wsUrl);
+    console.log("[webterm:create] Config received:", JSON.stringify(config, null, 2));
+    
     // Determine WASM path - try to find it relative to the script location
     const wasmPath = getWasmPath();
+    console.log("[webterm:create] WASM path:", wasmPath);
     
     // Build terminal options
+    const themeToUse = config.theme ?? THEMES.xterm;
+    console.log("[webterm:create] Theme to use (config.theme ?? THEMES.xterm):", JSON.stringify(themeToUse, null, 2));
+    
     const options: ITerminalOptions = {
       fontFamily: config.fontFamily ?? DEFAULT_FONT_FAMILY,
       fontSize: config.fontSize ?? 16,
       scrollback: config.scrollback ?? 1000,
       cursorBlink: true,
       cursorStyle: "block",
-      theme: config.theme ?? THEMES.xterm,
+      theme: themeToUse,
       wasmPath,
     };
+    console.log("[webterm:create] Full ITerminalOptions:", JSON.stringify(options, null, 2));
 
+    console.log("[webterm:create] Creating ghostty-web Terminal instance...");
     const terminal = new Terminal(options);
+    console.log("[webterm:create] Terminal created:", terminal);
+    console.log("[webterm:create] Terminal.options:", (terminal as unknown as { options?: unknown }).options);
+    
+    console.log("[webterm:create] Creating FitAddon...");
     const fitAddon = new FitAddon();
+    console.log("[webterm:create] Loading FitAddon into terminal...");
     terminal.loadAddon(fitAddon);
 
     // Open terminal (this loads WASM and initializes everything)
+    console.log("[webterm:create] Calling terminal.open(container)...");
     await terminal.open(container);
+    console.log("[webterm:create] terminal.open() completed");
+    
+    // Check internal state after open
+    const internalTerminal = terminal as unknown as Record<string, unknown>;
+    console.log("[webterm:create] Terminal internal keys:", Object.keys(internalTerminal));
+    if (internalTerminal.renderer) {
+      console.log("[webterm:create] Renderer exists:", internalTerminal.renderer);
+      const renderer = internalTerminal.renderer as Record<string, unknown>;
+      console.log("[webterm:create] Renderer keys:", Object.keys(renderer));
+      if (renderer.theme) {
+        console.log("[webterm:create] Renderer.theme:", renderer.theme);
+      }
+      if (renderer.palette) {
+        console.log("[webterm:create] Renderer.palette:", renderer.palette);
+      }
+    }
 
-    const instance = new WebTerminal(container, wsUrl, terminal, fitAddon);
+    const instance = new WebTerminal(
+      container,
+      wsUrl,
+      terminal,
+      fitAddon,
+      options.fontFamily ?? DEFAULT_FONT_FAMILY,
+      options.fontSize ?? 16
+    );
+    console.log("[webterm:create] WebTerminal instance created");
     instance.initialize();
+    console.log("[webterm:create] WebTerminal initialized");
     return instance;
   }
 
@@ -862,8 +924,8 @@ class WebTerminal {
     const testElement = document.createElement('span');
     testElement.style.visibility = 'hidden';
     testElement.style.position = 'absolute';
-    testElement.style.fontFamily = this.options.fontFamily || 'monospace';
-    testElement.style.fontSize = `${this.options.fontSize || 14}px`;
+    testElement.style.fontFamily = this.fontFamily;
+    testElement.style.fontSize = `${this.fontSize}px`;
     testElement.style.lineHeight = 'normal';
     testElement.textContent = 'W';
     
@@ -1052,9 +1114,14 @@ const instances: Map<HTMLElement, WebTerminal> = new Map();
 
 /** Initialize all terminal containers on page load */
 async function initTerminals(): Promise<void> {
+  console.log("[webterm:init] initTerminals() called");
   const containers = document.querySelectorAll<HTMLElement>(".textual-terminal");
+  console.log(`[webterm:init] Found ${containers.length} .textual-terminal containers`);
 
   for (const el of containers) {
+    console.log("[webterm:init] Processing container:", el);
+    console.log("[webterm:init] Dataset:", JSON.stringify(el.dataset));
+    
     const wsUrl = el.dataset.sessionWebsocketUrl;
     if (!wsUrl) {
       console.error("Missing data-session-websocket-url on terminal container");
@@ -1062,8 +1129,12 @@ async function initTerminals(): Promise<void> {
     }
 
     const config = parseConfig(el);
+    console.log("[webterm:init] Parsed config:", JSON.stringify(config, null, 2));
+    
     try {
+      console.log("[webterm:init] Calling WebTerminal.create()...");
       const terminal = await WebTerminal.create(el, wsUrl, config);
+      console.log("[webterm:init] WebTerminal created successfully");
       instances.set(el, terminal);
     } catch (e) {
       console.error("Failed to create terminal:", e);
