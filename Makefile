@@ -26,6 +26,7 @@ install: ## Install package in editable mode
 	$(PIP) install -e .
 
 install-dev: install ## Install with dev dependencies
+	$(PIP) install aiohttp uvloop click pydantic importlib-metadata tomli pyyaml pyte
 	$(PIP) install pytest pytest-asyncio pytest-cov pytest-timeout ruff
 
 lint: ## Run ruff linter
