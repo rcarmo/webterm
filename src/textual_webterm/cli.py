@@ -119,8 +119,8 @@ def load_app_class(app_path: str):
 @click.option(
     "--theme",
     "-t",
-    help="Terminal color theme (monokai, dark, light, dracula, catppuccin, nord, gruvbox, solarized, tokyo).",
-    default="monokai",
+    help="Terminal color theme (xterm, monokai, dark, light, dracula, catppuccin, nord, gruvbox, solarized, tokyo).",
+    default="xterm",
 )
 @click.option(
     "--font-family",

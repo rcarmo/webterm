@@ -124,7 +124,7 @@ class LocalServer:
         landing_apps: list | None = None,
         compose_mode: bool = False,
         compose_project: str | None = None,
-        theme: str = "monokai",
+        theme: str = "xterm",
         font_family: str | None = None,
         font_size: int = 16,
     ) -> None:
