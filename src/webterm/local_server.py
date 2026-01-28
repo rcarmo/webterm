@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import signal
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -84,7 +85,10 @@ class LocalClientConnector(SessionConnector):
 
 class LocalServer:
     def mark_route_activity(self, route_key: str) -> None:
-        now = asyncio.get_event_loop().time()
+        try:
+            now = asyncio.get_running_loop().time()
+        except RuntimeError:
+            now = time.monotonic()
         self._route_last_activity[route_key] = now
         # Throttle SSE notifications - max once per 250ms per route
         last_notified = self._route_last_sse_notification.get(route_key, 0.0)
@@ -738,8 +742,9 @@ class LocalServer:
         h1 {{ margin-bottom: 8px; }}
         .subtitle {{ color: #64748b; font-size: 14px; margin-bottom: 16px; }}
         .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }}
-        .tile {{ background: #1e293b; border: 1px solid #334155; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer; }}
+        .tile {{ background: #1e293b; border: 1px solid #334155; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer; transition: border-color 0.15s; }}
         .tile:hover {{ border-color: #475569; }}
+        .tile.selected {{ border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.3); }}
         .tile-header {{ padding: 10px 12px; font-weight: bold; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; }}
         .tile-title {{ display: flex; align-items: center; gap: 8px; }}
         .sparkline {{ opacity: 0.9; }}
@@ -748,17 +753,49 @@ class LocalServer:
         .meta {{ padding: 8px 12px; color: #94a3b8; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
         a {{ color: inherit; text-decoration: none; }}
         .empty {{ color: #64748b; text-align: center; padding: 40px; }}
+        /* Floating search results panel */
+        .floating-results {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px; max-width: 90vw; max-height: 70vh; overflow-y: auto; background: #1e293b; border: 1px solid #475569; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); padding: 16px; z-index: 1000; }}
+        .floating-results.hidden {{ display: none; }}
+        .floating-results .search-header {{ margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #334155; display: flex; align-items: center; gap: 8px; }}
+        .floating-results .search-query {{ font-size: 18px; font-weight: bold; color: #3b82f6; }}
+        .floating-results .result-item {{ display: flex; align-items: center; gap: 12px; padding: 12px; margin: 6px 0; border: 1px solid #334155; border-radius: 6px; cursor: pointer; transition: all 0.15s; }}
+        .floating-results .result-item:hover, .floating-results .result-item.active {{ background: #334155; border-color: #3b82f6; }}
+        .floating-results .result-thumb {{ width: 72px; height: 40px; flex: 0 0 auto; border-radius: 4px; border: 1px solid #334155; background: #0b1220; object-fit: contain; }}
+        .floating-results .result-content {{ display: flex; flex-direction: column; gap: 2px; }}
+        .floating-results .result-title {{ font-weight: bold; margin-bottom: 4px; }}
+        .floating-results .result-meta {{ font-size: 12px; color: #94a3b8; }}
+        .floating-results .no-results {{ color: #64748b; text-align: center; padding: 20px; }}
+        /* Keyboard indicator */
+        .key-indicator {{ position: fixed; bottom: 16px; left: 16px; display: flex; gap: 4px; z-index: 1000; }}
+        .key-box {{ display: inline-flex; align-items: center; justify-content: center; background: #334155; color: #e2e8f0; font-size: 12px; font-weight: bold; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); opacity: 1; transition: opacity 0.3s; }}
+        .key-box.square {{ width: 28px; height: 28px; }}
+        .key-box.rectangle {{ padding: 4px 8px; }}
+        .key-box.fade-out {{ opacity: 0; }}
+        /* Help hint */
+        .help-hint {{ position: fixed; bottom: 16px; right: 16px; color: #64748b; font-size: 12px; }}
     </style>
 </head>
 <body>
     <h1>Sessions</h1>
     <div class="subtitle" id="subtitle"></div>
     <div class=\"grid\" id=\"grid\"></div>
+    <div class=\"floating-results hidden\" id=\"floating-results\"></div>
+    <div class=\"key-indicator\" id=\"key-indicator\"></div>
+    <div class=\"help-hint\">Type to search \u2022 \u2191\u2193 to navigate \u2022 Enter to open \u2022 Esc to clear</div>
     <script>
         let tiles = {tiles_json};
         const composeMode = {compose_mode_js};
         const dockerWatchMode = {docker_watch_js};
         let cardsBySlug = {{}};
+
+        // Typeahead search state
+        let searchQuery = '';
+        let activeResultIndex = -1;
+        let filteredResults = [];
+        const floatingResultsEl = document.getElementById('floating-results');
+        const keyIndicatorEl = document.getElementById('key-indicator');
+        const thumbnailCache = {{}};
+        const THUMBNAIL_TTL_MS = 5000;
 
         function makeTile(tile) {{
             const card = document.createElement('div');
@@ -821,6 +858,181 @@ class LocalServer:
 
         // Initial render
         renderTiles();
+
+        // Typeahead search functions
+        function openTile(tile) {{
+            if (!tile || !tile.slug) return;
+            window.open(`/?route_key=${{encodeURIComponent(tile.slug)}}`, `webterm-${{tile.slug}}`);
+        }}
+
+        function normalizeText(value) {{
+            return (value || '').toString().toLowerCase();
+        }}
+
+        function getTileTitle(tile) {{
+            return tile.name || tile.slug || 'Unknown';
+        }}
+
+        function getTileCommand(tile) {{
+            return tile.command || '';
+        }}
+
+        function getThumbnailSrc(tile) {{
+            const slug = tile.slug || '';
+            if (!slug) return '';
+            const now = Date.now();
+            const existing = thumbnailCache[slug];
+            if (!existing || (now - existing.updatedAt) > THUMBNAIL_TTL_MS) {{
+                const src = `/screenshot.svg?route_key=${{encodeURIComponent(slug)}}&_t=${{now}}`;
+                thumbnailCache[slug] = {{ src, updatedAt: now }};
+                return src;
+            }}
+            return existing.src;
+        }}
+
+        function renderFloatingResults() {{
+            floatingResultsEl.innerHTML = '';
+            if (searchQuery === '') {{
+                floatingResultsEl.classList.add('hidden');
+                activeResultIndex = -1;
+                filteredResults = [];
+                // Clear tile selection
+                Object.values(cardsBySlug).forEach(c => c.classList.remove('selected'));
+                return;
+            }}
+
+            const query = normalizeText(searchQuery);
+            filteredResults = tiles.filter(t => {{
+                if (!t) return false;
+                const name = normalizeText(t.name);
+                const command = normalizeText(t.command);
+                const slug = normalizeText(t.slug);
+                return name.includes(query) || command.includes(query) || slug.includes(query);
+            }});
+
+            // Build header
+            const header = document.createElement('div');
+            header.className = 'search-header';
+            header.innerHTML = `<span>Search:</span><span class="search-query">${{searchQuery}}</span>`;
+            floatingResultsEl.appendChild(header);
+
+            if (filteredResults.length === 0) {{
+                const noResults = document.createElement('div');
+                noResults.className = 'no-results';
+                noResults.textContent = 'No matches found';
+                floatingResultsEl.appendChild(noResults);
+            }} else {{
+                // Auto-select first (or only) result
+                if (activeResultIndex < 0 || activeResultIndex >= filteredResults.length) {{
+                    activeResultIndex = 0;
+                }}
+                filteredResults.forEach((tile, index) => {{
+                    const item = document.createElement('div');
+                    item.className = 'result-item' + (index === activeResultIndex ? ' active' : '');
+                    const thumb = document.createElement('img');
+                    thumb.className = 'result-thumb';
+                    const title = getTileTitle(tile);
+                    const command = getTileCommand(tile);
+                    const thumbSrc = getThumbnailSrc(tile);
+                    thumb.alt = title;
+                    if (thumbSrc) {{
+                        thumb.src = thumbSrc;
+                    }} else {{
+                        thumb.style.display = 'none';
+                    }}
+                    const content = document.createElement('div');
+                    content.className = 'result-content';
+                    content.innerHTML = `<div class="result-title">${{title}}</div><div class="result-meta">${{command}}</div>`;
+                    item.appendChild(thumb);
+                    item.appendChild(content);
+                    item.onclick = () => openTile(tile);
+                    floatingResultsEl.appendChild(item);
+                }});
+            }}
+            floatingResultsEl.classList.remove('hidden');
+            updateTileSelection();
+        }}
+
+        function updateTileSelection() {{
+            // Clear all selections
+            Object.values(cardsBySlug).forEach(c => c.classList.remove('selected'));
+            // Highlight selected tile in main grid
+            if (filteredResults.length > 0 && activeResultIndex >= 0) {{
+                const selected = filteredResults[activeResultIndex];
+                if (selected && selected.slug) {{
+                    const card = cardsBySlug[selected.slug];
+                    if (card) card.classList.add('selected');
+                }}
+            }}
+        }}
+
+        function showKeyIndicator(key) {{
+            const arrowKeyMap = {{ ArrowLeft: '\u2190', ArrowRight: '\u2192', ArrowUp: '\u2191', ArrowDown: '\u2193' }};
+            const keyDisplay = arrowKeyMap[key] || key;
+            const keyBox = document.createElement('div');
+            keyBox.className = 'key-box ' + (key.length > 1 ? 'rectangle' : 'square');
+            keyBox.textContent = keyDisplay;
+            keyIndicatorEl.appendChild(keyBox);
+            setTimeout(() => {{
+                keyBox.classList.add('fade-out');
+                setTimeout(() => keyBox.remove(), 300);
+            }}, 1500);
+        }}
+
+        function handleKeydown(event) {{
+            // Don't interfere with input fields
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+
+            showKeyIndicator(event.key);
+
+            if (event.key === 'Escape') {{
+                searchQuery = '';
+                activeResultIndex = -1;
+                renderFloatingResults();
+                return;
+            }}
+
+            if (event.key === 'Backspace') {{
+                searchQuery = searchQuery.slice(0, -1);
+                renderFloatingResults();
+                return;
+            }}
+
+            if (event.key === 'ArrowUp') {{
+                event.preventDefault();
+                if (filteredResults.length > 0) {{
+                    activeResultIndex = (activeResultIndex - 1 + filteredResults.length) % filteredResults.length;
+                    renderFloatingResults();
+                }}
+                return;
+            }}
+
+            if (event.key === 'ArrowDown') {{
+                event.preventDefault();
+                if (filteredResults.length > 0) {{
+                    activeResultIndex = (activeResultIndex + 1) % filteredResults.length;
+                    renderFloatingResults();
+                }}
+                return;
+            }}
+
+            if (event.key === 'Enter') {{
+                if (filteredResults.length > 0 && activeResultIndex >= 0) {{
+                    openTile(filteredResults[activeResultIndex]);
+                }} else if (filteredResults.length === 1) {{
+                    openTile(filteredResults[0]);
+                }}
+                return;
+            }}
+
+            // Regular character input
+            if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {{
+                searchQuery += event.key.toLowerCase();
+                renderFloatingResults();
+            }}
+        }}
+
+        document.addEventListener('keydown', handleKeydown);
 
         // Refresh a single tile's screenshot
         function refreshTile(slug) {{
