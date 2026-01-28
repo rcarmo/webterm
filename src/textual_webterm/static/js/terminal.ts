@@ -557,6 +557,7 @@ class WebTerminal {
       <button data-key="\\x1b[B" title="Down">↓</button>
       <button data-key="\\x1b[D" title="Left">←</button>
       <button data-key="\\x1b[C" title="Right">→</button>
+      <button data-key="\\r" title="Return" class="keybar-return">⏎</button>
     `;
 
     // Inject styles
@@ -566,8 +567,8 @@ class WebTerminal {
         position: fixed;
         bottom: 80px;
         right: 0;
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(5, auto);
         gap: 4px;
         padding: 6px;
         background: rgba(40, 40, 40, 0.95);
@@ -575,7 +576,6 @@ class WebTerminal {
         box-shadow: 0 2px 10px rgba(0,0,0,0.3);
         z-index: 10000;
         touch-action: none;
-        max-width: 200px;
         user-select: none;
         -webkit-user-select: none;
       }
@@ -607,6 +607,10 @@ class WebTerminal {
       }
       .mobile-keybar .keybar-drag:active {
         cursor: grabbing;
+      }
+      .mobile-keybar .keybar-return {
+        grid-column: 5;
+        grid-row: 2;
       }
     `;
     document.head.appendChild(style);
