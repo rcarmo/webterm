@@ -59,7 +59,6 @@ class WebTerminal {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
-  private resizeEventsEnabled = false;
 
   constructor(container: HTMLElement, wsUrl: string, config: TerminalConfig = {}) {
     this.element = container;
@@ -115,9 +114,6 @@ class WebTerminal {
 
     // Handle resize
     this.terminal.onResize(({ cols, rows }) => {
-      if (!this.resizeEventsEnabled) {
-        return;
-      }
       this.send(["resize", { width: cols, height: rows }]);
     });
 
@@ -183,7 +179,6 @@ class WebTerminal {
       // Important: the PTY hard-wraps output based on its initial cols/rows.
       // If we send a resize before fonts/layout settle, the initial cols can be
       // too small and the shell will wrap permanently.
-      this.resizeEventsEnabled = false;
 
       const init = () => {
         const fallback = { cols: 132, rows: 45 };
@@ -203,13 +198,11 @@ class WebTerminal {
               return;
             }
             this.terminal.resize(fallback.cols, fallback.rows);
-            this.resizeEventsEnabled = true;
             this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
             return;
           }
 
           this.terminal.resize(dims.cols, dims.rows);
-          this.resizeEventsEnabled = true;
           this.send(["resize", { width: dims.cols, height: dims.rows }]);
         };
 
