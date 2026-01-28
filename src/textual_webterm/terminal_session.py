@@ -206,25 +206,28 @@ class TerminalSession(Session):
             has_changes = len(self._screen.dirty) > 0
             # Clear dirty set after checking
             self._screen.dirty.clear()
-            # Copy the buffer data to avoid holding the lock
-            buffer = []
-            for row in range(height):
-                row_data = []
-                for col in range(width):
-                    char = self._screen.buffer[row][col]
-                    row_data.append(
-                        {
-                            "data": char.data if char.data else " ",
-                            "fg": char.fg,
-                            "bg": char.bg,
-                            "bold": char.bold,
-                            "italics": char.italics,
-                            "underscore": char.underscore,
-                            "reverse": char.reverse,
-                        }
-                    )
-                buffer.append(row_data)
-            return (width, height, buffer, has_changes)
+            # Snapshot buffer cells quickly to minimize lock hold time
+            snapshot = [
+                [self._screen.buffer[row][col] for col in range(width)] for row in range(height)
+            ]
+
+        buffer = []
+        for row_data in snapshot:
+            row_chars = []
+            for char in row_data:
+                row_chars.append(
+                    {
+                        "data": char.data if char.data else " ",
+                        "fg": char.fg,
+                        "bg": char.bg,
+                        "bold": char.bold,
+                        "italics": char.italics,
+                        "underscore": char.underscore,
+                        "reverse": char.reverse,
+                    }
+                )
+            buffer.append(row_chars)
+        return (width, height, buffer, has_changes)
 
     def update_connector(self, connector: SessionConnector) -> None:
         """Update the connector for reconnection without restarting the session."""

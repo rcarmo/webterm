@@ -536,24 +536,7 @@ class LocalServer:
             raise web.HTTPNotFound(text="Session not found")
 
         # Get the actual screen state from the terminal session's pyte screen
-        # Use a lightweight dirty check first to avoid clearing dirty flags unnecessarily.
-        has_changes = await session_process.get_screen_has_changes()  # type: ignore[union-attr]
         cached = self._screenshot_cache.get(route_key)
-        if not has_changes and cached is not None:
-            cached_response = self._get_cached_screenshot_response(request, route_key)
-            if cached_response is not None:
-                return cached_response
-
-        screen_width, screen_height, screen_buffer, _ = await session_process.get_screen_state()  # type: ignore[union-attr]
-
-        now = asyncio.get_event_loop().time()
-        ttl = self._get_screenshot_cache_ttl(route_key, now)
-
-        # Also check time-based cache for recently rendered screenshots
-        if cached is not None and (now - cached[0]) < ttl:
-            cached_response = self._get_cached_screenshot_response(request, route_key)
-            if cached_response is not None:
-                return cached_response
 
         lock = self._screenshot_locks.get(route_key)
         if lock is None:
@@ -561,13 +544,26 @@ class LocalServer:
             self._screenshot_locks[route_key] = lock
 
         async with lock:
-            # Another request may have refreshed the cache while we waited.
+            now = asyncio.get_event_loop().time()
             ttl = self._get_screenshot_cache_ttl(route_key, now)
             cached = self._screenshot_cache.get(route_key)
             if cached is not None and (now - cached[0]) < ttl:
                 cached_response = self._get_cached_screenshot_response(request, route_key)
                 if cached_response is not None:
                     return cached_response
+
+            has_changes = await session_process.get_screen_has_changes()  # type: ignore[union-attr]
+            if not has_changes and cached is not None:
+                cached_response = self._get_cached_screenshot_response(request, route_key)
+                if cached_response is not None:
+                    return cached_response
+
+            (
+                screen_width,
+                screen_height,
+                screen_buffer,
+                _,
+            ) = await session_process.get_screen_state()  # type: ignore[union-attr]
 
             def _render_svg() -> str:
                 # Use custom SVG exporter - simpler and more reliable than Rich

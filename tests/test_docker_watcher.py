@@ -9,62 +9,67 @@ import pytest
 from textual_webterm.docker_watcher import DEFAULT_COMMAND, LABEL_NAME, DockerWatcher
 
 
+@pytest.fixture
+def session_manager():
+    manager = MagicMock()
+    manager.apps_by_slug = {}
+    manager.apps = []
+    manager.get_session_by_route_key.return_value = None
+    return manager
+
+
+@pytest.fixture
+def docker_watcher(session_manager):
+    return DockerWatcher(session_manager)
+
+
 class TestDockerWatcher:
     """Tests for DockerWatcher class."""
 
-    def test_container_to_slug(self):
+    def test_container_to_slug(self, docker_watcher):
         """Test slug generation from container names."""
-        watcher = DockerWatcher(MagicMock())
-
         # Test basic name
         container = {"Names": ["/my-container"]}
-        assert watcher._container_to_slug(container) == "my-container"
+        assert docker_watcher._container_to_slug(container) == "my-container"
 
         # Test with underscores
         container = {"Names": ["/my_container_name"]}
-        assert watcher._container_to_slug(container) == "my-container-name"
+        assert docker_watcher._container_to_slug(container) == "my-container-name"
 
         # Test with dots
         container = {"Names": ["/service.name"]}
-        assert watcher._container_to_slug(container) == "service-name"
+        assert docker_watcher._container_to_slug(container) == "service-name"
 
         # Test fallback to ID
         container = {"Id": "abc123def456"}
-        assert watcher._container_to_slug(container) == "abc123def456"
+        assert docker_watcher._container_to_slug(container) == "abc123def456"
 
-    def test_get_container_name(self):
+    def test_get_container_name(self, docker_watcher):
         """Test extracting container name."""
-        watcher = DockerWatcher(MagicMock())
-
         container = {"Names": ["/my-container"]}
-        assert watcher._get_container_name(container) == "my-container"
+        assert docker_watcher._get_container_name(container) == "my-container"
 
         container = {"Names": []}
         container["Id"] = "abc123def456789"
-        assert watcher._get_container_name(container) == "abc123def456"
+        assert docker_watcher._get_container_name(container) == "abc123def456"
 
-    def test_get_container_command_auto(self):
+    def test_get_container_command_auto(self, docker_watcher):
         """Test command generation when label is 'auto'."""
-        watcher = DockerWatcher(MagicMock())
-
         container = {"Names": ["/my-container"], "Labels": {LABEL_NAME: "auto"}}
         expected = f"docker exec -it my-container {DEFAULT_COMMAND}"
-        assert watcher._get_container_command(container) == expected
+        assert docker_watcher._get_container_command(container) == expected
 
-    def test_get_container_command_custom(self):
+    def test_get_container_command_custom(self, docker_watcher):
         """Test command when label has custom value."""
-        watcher = DockerWatcher(MagicMock())
-
         container = {
             "Names": ["/my-container"],
             "Labels": {LABEL_NAME: "docker logs -f my-container"},
         }
-        assert watcher._get_container_command(container) == "docker logs -f my-container"
+        assert docker_watcher._get_container_command(container) == "docker logs -f my-container"
 
     @pytest.mark.asyncio
-    async def test_add_container(self):
+    async def test_add_container(self, session_manager):
         """Test adding a container."""
-        session_manager = MagicMock()
         on_added = MagicMock()
         watcher = DockerWatcher(session_manager, on_container_added=on_added)
 
@@ -87,9 +92,8 @@ class TestDockerWatcher:
         assert "test-container" in watcher._managed_containers
 
     @pytest.mark.asyncio
-    async def test_add_container_already_managed(self):
+    async def test_add_container_already_managed(self, session_manager):
         """Test adding a container that's already managed."""
-        session_manager = MagicMock()
         watcher = DockerWatcher(session_manager)
         watcher._managed_containers["test-container"] = "abc123"
 
@@ -101,9 +105,8 @@ class TestDockerWatcher:
         session_manager.add_app.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_remove_container(self):
+    async def test_remove_container(self, session_manager):
         """Test removing a container."""
-        session_manager = MagicMock()
         session_manager.apps_by_slug = {"test-container": MagicMock()}
         session_manager.apps = [session_manager.apps_by_slug["test-container"]]
         session_manager.get_session_by_route_key.return_value = None
@@ -121,9 +124,8 @@ class TestDockerWatcher:
         on_removed.assert_called_once_with("test-container")
 
     @pytest.mark.asyncio
-    async def test_remove_container_not_managed(self):
+    async def test_remove_container_not_managed(self, session_manager):
         """Test removing a container that's not managed."""
-        session_manager = MagicMock()
         on_removed = MagicMock()
         watcher = DockerWatcher(session_manager, on_container_removed=on_removed)
 
@@ -133,9 +135,8 @@ class TestDockerWatcher:
         on_removed.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_start_stop(self):
+    async def test_start_stop(self, session_manager):
         """Test starting and stopping the watcher."""
-        session_manager = MagicMock()
         watcher = DockerWatcher(session_manager, socket_path="/nonexistent.sock")
 
         # Mock the methods that would fail without Docker
@@ -153,9 +154,8 @@ class TestDockerWatcherIntegration:
     """Integration-style tests for Docker watcher."""
 
     @pytest.mark.asyncio
-    async def test_handle_start_event(self):
+    async def test_handle_start_event(self, session_manager):
         """Test handling a container start event."""
-        session_manager = MagicMock()
         watcher = DockerWatcher(session_manager)
 
         # Mock the docker request to return container info
@@ -180,9 +180,8 @@ class TestDockerWatcherIntegration:
         session_manager.add_app.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_handle_die_event(self):
+    async def test_handle_die_event(self, session_manager):
         """Test handling a container die event."""
-        session_manager = MagicMock()
         session_manager.apps_by_slug = {}
         session_manager.apps = []
         session_manager.get_session_by_route_key.return_value = None
@@ -201,9 +200,8 @@ class TestDockerWatcherIntegration:
         assert "test-service" not in watcher._managed_containers
 
     @pytest.mark.asyncio
-    async def test_handle_event_without_label(self):
+    async def test_handle_event_without_label(self, session_manager):
         """Test that events without our label are ignored."""
-        session_manager = MagicMock()
         watcher = DockerWatcher(session_manager)
 
         event = {
@@ -218,3 +216,52 @@ class TestDockerWatcherIntegration:
 
         # Should not add container
         session_manager.add_app.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("labels", "expected"),
+    [
+        ({"webterm-command": "echo hi"}, "echo hi"),
+        ({"webterm-command": "auto"}, f"docker exec -it my-container {DEFAULT_COMMAND}"),
+        ({"other": "value"}, f"docker exec -it my-container {DEFAULT_COMMAND}"),
+    ],
+)
+def test_get_container_command_variants(docker_watcher, labels, expected):
+    container = {"Names": ["/my-container"], "Labels": labels}
+    assert docker_watcher._get_container_command(container) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        (200, '[{"Id":"abc","Names":["/c1"],"Labels":{"webterm-command":"auto"}}]', 1),
+        (200, "[]", 0),
+        (500, "error", 0),
+    ],
+)
+async def test_get_labeled_containers_handles_status(
+    docker_watcher, status, body, expected, monkeypatch
+):
+    async def fake_request(method: str, path: str):
+        return status, body
+
+    monkeypatch.setattr(docker_watcher, "_docker_request", fake_request)
+    result = await docker_watcher._get_labeled_containers()
+    assert len(result) == expected
+
+
+@pytest.mark.asyncio
+async def test_watch_events_recovers_from_errors(docker_watcher, monkeypatch):
+    docker_watcher._running = True
+
+    async def fail_once(*_args, **_kwargs):
+        docker_watcher._running = False
+        raise OSError("boom")
+
+    async def fake_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr("textual_webterm.docker_watcher.asyncio.open_unix_connection", fail_once)
+    monkeypatch.setattr("textual_webterm.docker_watcher.asyncio.sleep", fake_sleep)
+    await docker_watcher._watch_events()
