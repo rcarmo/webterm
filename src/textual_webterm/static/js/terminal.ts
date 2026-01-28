@@ -315,11 +315,21 @@ function hexToRgb(hex: string): [number, number, number] {
   ];
 }
 
-/** Create a color map from default palette RGB to theme palette RGB */
-function buildColorMap(theme: ITheme): Map<string, [number, number, number]> {
-  const colorMap = new Map<string, [number, number, number]>();
+/**
+ * Build a fast lookup table for color remapping.
+ * Uses a flat Uint8Array indexed by packed RGB (r << 16 | g << 8 | b) % tableSize.
+ * Returns null for unmapped colors (non-palette colors like 256-color/truecolor).
+ */
+function buildColorLookup(theme: ITheme): {
+  lookup: Uint32Array;
+  hasMapping: Uint8Array;
+} {
+  // Use a hash table with separate chaining avoided by using unique keys
+  // Since we only have 18 colors, a small table with direct indexing works
+  const TABLE_SIZE = 65536; // 2^16 - good for sparse lookups
+  const lookup = new Uint32Array(TABLE_SIZE);
+  const hasMapping = new Uint8Array(TABLE_SIZE);
   
-  // Map each default color to the corresponding theme color
   const colorKeys: (keyof ITheme)[] = [
     'foreground', 'background',
     'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
@@ -331,103 +341,120 @@ function buildColorMap(theme: ITheme): Map<string, [number, number, number]> {
     const defaultColor = GHOSTTY_DEFAULT_PALETTE[key];
     const themeColor = theme[key];
     if (defaultColor && themeColor) {
-      const defaultRgb = hexToRgb(defaultColor);
-      const themeRgb = hexToRgb(themeColor);
-      // Key is "r,g,b" string for fast lookup
-      const keyStr = `${defaultRgb[0]},${defaultRgb[1]},${defaultRgb[2]}`;
-      colorMap.set(keyStr, themeRgb);
+      const [dr, dg, db] = hexToRgb(defaultColor);
+      const [tr, tg, tb] = hexToRgb(themeColor);
+      // Hash: use lower bits of combined RGB
+      const hash = ((dr * 31 + dg) * 31 + db) & (TABLE_SIZE - 1);
+      // Pack theme RGB into uint32: r | g << 8 | b << 16
+      lookup[hash] = tr | (tg << 8) | (tb << 16);
+      hasMapping[hash] = 1;
     }
   }
   
-  return colorMap;
+  return { lookup, hasMapping };
+}
+
+/** Compute hash for RGB color (must match buildColorLookup) */
+function colorHash(r: number, g: number, b: number): number {
+  return ((r * 31 + g) * 31 + b) & 65535;
 }
 
 /**
- * Patch the renderer to remap colors from ghostty-web's default palette
- * to our custom theme palette.
- * 
- * This is necessary because ghostty-web's WASM terminal has a hardcoded
- * palette and returns pre-resolved RGB values. The theme we pass to the
- * renderer is only used for background/cursor/selection, not for text colors.
+ * Patch the WASM terminal's getLine method to remap colors at the source.
+ * This is more efficient than patching renderCell since it processes
+ * colors once per line fetch rather than once per cell render.
  */
-function patchRendererColors(terminal: Terminal, theme: ITheme): void {
+function patchWasmColors(terminal: Terminal, theme: ITheme): void {
   const internalTerminal = terminal as unknown as Record<string, unknown>;
-  const renderer = internalTerminal.renderer as Record<string, unknown> | undefined;
+  const wasmTerminal = internalTerminal.terminal as Record<string, unknown> | undefined;
   
-  if (!renderer) {
-    console.warn("[webterm:patch] No renderer found, cannot patch colors");
+  if (!wasmTerminal) {
+    console.warn("[webterm:patch] No WASM terminal found, cannot patch colors");
     return;
   }
   
-  const colorMap = buildColorMap(theme);
-  console.log("[webterm:patch] Built color map with", colorMap.size, "entries");
-  // Log a few mappings for debugging
-  for (const [key, value] of colorMap.entries()) {
-    console.log(`[webterm:patch] Color map: ${key} -> ${value.join(",")}`);
-  }
+  const { lookup, hasMapping } = buildColorLookup(theme);
+  console.log("[webterm:patch] Built optimized color lookup table");
   
-  // Store original renderCell method
-  const originalRenderCell = renderer.renderCell as (
-    cell: { fg_r: number; fg_g: number; fg_b: number; bg_r: number; bg_g: number; bg_b: number; [key: string]: unknown },
-    col: number,
-    row: number
-  ) => void;
+  // Patch getLine to remap colors in returned cells
+  const originalGetLine = wasmTerminal.getLine as (row: number) => Array<{
+    fg_r: number; fg_g: number; fg_b: number;
+    bg_r: number; bg_g: number; bg_b: number;
+    [key: string]: unknown;
+  }> | null;
   
-  if (!originalRenderCell) {
-    console.warn("[webterm:patch] No renderCell method found");
+  if (!originalGetLine) {
+    console.warn("[webterm:patch] No getLine method found on WASM terminal");
     return;
   }
   
-  let patchLogCount = 0;
-  const maxPatchLogs = 20;
-  const seenColors = new Set<string>();
-  
-  // Patch renderCell to remap colors
-  renderer.renderCell = function(
-    cell: { fg_r: number; fg_g: number; fg_b: number; bg_r: number; bg_g: number; bg_b: number; [key: string]: unknown },
-    col: number,
-    row: number
-  ) {
-    // Log unique colors we see from WASM (for debugging)
-    const fgKey = `${cell.fg_r},${cell.fg_g},${cell.fg_b}`;
-    const bgKey = `${cell.bg_r},${cell.bg_g},${cell.bg_b}`;
+  wasmTerminal.getLine = function(row: number) {
+    const cells = originalGetLine.call(this, row);
+    if (!cells) return cells;
     
-    if (patchLogCount < maxPatchLogs) {
-      if (!seenColors.has(`fg:${fgKey}`)) {
-        seenColors.add(`fg:${fgKey}`);
-        const inMap = colorMap.has(fgKey);
-        console.log(`[webterm:patch] WASM fg color: ${fgKey} (in map: ${inMap})`);
-        patchLogCount++;
+    // Remap colors in-place for performance
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      
+      // Remap foreground
+      const fgHash = colorHash(cell.fg_r, cell.fg_g, cell.fg_b);
+      if (hasMapping[fgHash]) {
+        const packed = lookup[fgHash];
+        cell.fg_r = packed & 0xff;
+        cell.fg_g = (packed >> 8) & 0xff;
+        cell.fg_b = (packed >> 16) & 0xff;
       }
-      if (!seenColors.has(`bg:${bgKey}`)) {
-        seenColors.add(`bg:${bgKey}`);
-        const inMap = colorMap.has(bgKey);
-        console.log(`[webterm:patch] WASM bg color: ${bgKey} (in map: ${inMap})`);
-        patchLogCount++;
+      
+      // Remap background
+      const bgHash = colorHash(cell.bg_r, cell.bg_g, cell.bg_b);
+      if (hasMapping[bgHash]) {
+        const packed = lookup[bgHash];
+        cell.bg_r = packed & 0xff;
+        cell.bg_g = (packed >> 8) & 0xff;
+        cell.bg_b = (packed >> 16) & 0xff;
       }
     }
     
-    // Remap foreground color
-    const mappedFg = colorMap.get(fgKey);
-    if (mappedFg) {
-      cell.fg_r = mappedFg[0];
-      cell.fg_g = mappedFg[1];
-      cell.fg_b = mappedFg[2];
-    }
-    
-    // Remap background color
-    const mappedBg = colorMap.get(bgKey);
-    if (mappedBg) {
-      cell.bg_r = mappedBg[0];
-      cell.bg_g = mappedBg[1];
-      cell.bg_b = mappedBg[2];
-    }
-    
-    // Call original method with remapped colors
-    return originalRenderCell.call(this, cell, col, row);
+    return cells;
   };
   
-  console.log("[webterm:patch] Successfully patched renderer.renderCell for theme colors");
+  // Also patch getScrollbackLine for scrollback rendering
+  const originalGetScrollbackLine = wasmTerminal.getScrollbackLine as (offset: number) => Array<{
+    fg_r: number; fg_g: number; fg_b: number;
+    bg_r: number; bg_g: number; bg_b: number;
+    [key: string]: unknown;
+  }> | null;
+  
+  if (originalGetScrollbackLine) {
+    wasmTerminal.getScrollbackLine = function(offset: number) {
+      const cells = originalGetScrollbackLine.call(this, offset);
+      if (!cells) return cells;
+      
+      for (let i = 0; i < cells.length; i++) {
+        const cell = cells[i];
+        
+        const fgHash = colorHash(cell.fg_r, cell.fg_g, cell.fg_b);
+        if (hasMapping[fgHash]) {
+          const packed = lookup[fgHash];
+          cell.fg_r = packed & 0xff;
+          cell.fg_g = (packed >> 8) & 0xff;
+          cell.fg_b = (packed >> 16) & 0xff;
+        }
+        
+        const bgHash = colorHash(cell.bg_r, cell.bg_g, cell.bg_b);
+        if (hasMapping[bgHash]) {
+          const packed = lookup[bgHash];
+          cell.bg_r = packed & 0xff;
+          cell.bg_g = (packed >> 8) & 0xff;
+          cell.bg_b = (packed >> 16) & 0xff;
+        }
+      }
+      
+      return cells;
+    };
+  }
+  
+  console.log("[webterm:patch] Successfully patched WASM getLine/getScrollbackLine for theme colors");
 }
 
 /** Configuration options passed via data attributes or window config */
@@ -587,8 +614,8 @@ class WebTerminal {
     await terminal.open(container);
     console.log("[webterm:create] terminal.open() completed");
     
-    // Patch renderer to remap colors from ghostty-web's default palette to our theme
-    patchRendererColors(terminal, themeToUse);
+    // Patch WASM terminal to remap colors from ghostty-web's default palette to our theme
+    patchWasmColors(terminal, themeToUse);
     
     // Check internal state after open
     const internalTerminal = terminal as unknown as Record<string, unknown>;
