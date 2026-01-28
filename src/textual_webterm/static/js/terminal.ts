@@ -373,15 +373,24 @@ class WebTerminal {
           }
 
           // Validate dimensions and terminal readiness before applying
-          if (dims && this.isValidSize(dims.cols, dims.rows) && this.isTerminalReady()) {
-            this.terminal.resize(dims.cols, dims.rows);
-            this.resizeState.lastValidSize = dims;
-            this.send(["resize", { width: dims.cols, height: dims.rows }]);
-          } else {
-            const reason = !dims ? "proposeDimensions failed" : 
-                          !this.isValidSize(dims.cols, dims.rows) ? `invalid dimensions: ${dims.cols}x${dims.rows}` :
-                          "terminal not ready";
-            console.warn(`Initial fit ${reason}, using fallback`);
+          // Use a defensive approach with multiple fallback strategies
+          try {
+            if (dims && this.isValidSize(dims.cols, dims.rows) && this.isTerminalReady()) {
+              this.terminal.resize(dims.cols, dims.rows);
+              this.resizeState.lastValidSize = dims;
+              this.send(["resize", { width: dims.cols, height: dims.rows }]);
+            } else {
+              const reason = !dims ? "proposeDimensions failed" : 
+                            !this.isValidSize(dims.cols, dims.rows) ? `invalid dimensions: ${dims.cols}x${dims.rows}` :
+                            "terminal not ready";
+              console.warn(`Initial fit ${reason}, using fallback`);
+              this.terminal.resize(fallback.cols, fallback.rows);
+              this.resizeState.lastValidSize = fallback;
+              this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
+            }
+          } catch (e) {
+            console.warn(`Initial fit failed with exception: ${e.message}, using fallback`);
+            // If anything goes wrong, use the fallback dimensions
             this.terminal.resize(fallback.cols, fallback.rows);
             this.resizeState.lastValidSize = fallback;
             this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
@@ -396,6 +405,26 @@ class WebTerminal {
       } else {
         init();
       }
+      
+      // Add a timeout-based fallback in case the initial fit never succeeds
+      const fallbackTimeout = setTimeout(() => {
+        if (!this.resizeState.lastValidSize) {
+          console.warn("Initial fit timed out, applying fallback dimensions");
+          const fallback = { cols: 80, rows: 24 };
+          try {
+            this.terminal.resize(fallback.cols, fallback.rows);
+            this.resizeState.lastValidSize = fallback;
+            this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
+          } catch (e) {
+            console.error("Fallback resize failed:", e);
+          }
+        }
+      }, 2000);
+      
+      // Clean up timeout when WebSocket connects
+      this.socket?.addEventListener('open', () => {
+        clearTimeout(fallbackTimeout);
+      });
 
       // Focus terminal
       this.terminal.focus();

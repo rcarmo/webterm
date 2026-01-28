@@ -14665,13 +14665,20 @@ class WebTerminal {
             this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
             return;
           }
-          if (dims && this.isValidSize(dims.cols, dims.rows) && this.isTerminalReady()) {
-            this.terminal.resize(dims.cols, dims.rows);
-            this.resizeState.lastValidSize = dims;
-            this.send(["resize", { width: dims.cols, height: dims.rows }]);
-          } else {
-            const reason = !dims ? "proposeDimensions failed" : !this.isValidSize(dims.cols, dims.rows) ? `invalid dimensions: ${dims.cols}x${dims.rows}` : "terminal not ready";
-            console.warn(`Initial fit ${reason}, using fallback`);
+          try {
+            if (dims && this.isValidSize(dims.cols, dims.rows) && this.isTerminalReady()) {
+              this.terminal.resize(dims.cols, dims.rows);
+              this.resizeState.lastValidSize = dims;
+              this.send(["resize", { width: dims.cols, height: dims.rows }]);
+            } else {
+              const reason = !dims ? "proposeDimensions failed" : !this.isValidSize(dims.cols, dims.rows) ? `invalid dimensions: ${dims.cols}x${dims.rows}` : "terminal not ready";
+              console.warn(`Initial fit ${reason}, using fallback`);
+              this.terminal.resize(fallback.cols, fallback.rows);
+              this.resizeState.lastValidSize = fallback;
+              this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
+            }
+          } catch (e) {
+            console.warn(`Initial fit failed with exception: ${e.message}, using fallback`);
             this.terminal.resize(fallback.cols, fallback.rows);
             this.resizeState.lastValidSize = fallback;
             this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
@@ -14684,6 +14691,22 @@ class WebTerminal {
       } else {
         init();
       }
+      const fallbackTimeout = setTimeout(() => {
+        if (!this.resizeState.lastValidSize) {
+          console.warn("Initial fit timed out, applying fallback dimensions");
+          const fallback = { cols: 80, rows: 24 };
+          try {
+            this.terminal.resize(fallback.cols, fallback.rows);
+            this.resizeState.lastValidSize = fallback;
+            this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
+          } catch (e) {
+            console.error("Fallback resize failed:", e);
+          }
+        }
+      }, 2000);
+      this.socket?.addEventListener("open", () => {
+        clearTimeout(fallbackTimeout);
+      });
       this.terminal.focus();
     });
     this.socket.addEventListener("close", () => {
