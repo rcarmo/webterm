@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "textual-webterm"
-version = "0.3.32"
+version = "0.4.0"
 description = "Serve terminal sessions over the web"
 authors = ["Will McGugan <will@textualize.io>"]
 license = "MIT"
@@ -8,8 +8,8 @@ readme = "README.md"
 packages = [{include = "textual_webterm", from = "src"}]
 include = [
     { path = "src/textual_webterm/static/monospace.css" },
-    { path = "src/textual_webterm/static/css/xterm.css" },
     { path = "src/textual_webterm/static/js/terminal.js" },
+    { path = "src/textual_webterm/static/js/ghostty-vt.wasm" },
 ]
 
 [tool.poetry.dependencies]

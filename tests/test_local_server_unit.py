@@ -27,12 +27,12 @@ class TestGetStaticPath:
         assert WEBTERM_STATIC_PATH is not None
         assert (WEBTERM_STATIC_PATH / "js").exists()
 
-    def test_static_path_has_css(self):
-        """Test that static path has CSS directory."""
+    def test_static_path_has_wasm(self):
+        """Test that static path has WASM file."""
         from textual_webterm.local_server import WEBTERM_STATIC_PATH
 
         assert WEBTERM_STATIC_PATH is not None
-        assert (WEBTERM_STATIC_PATH / "css").exists()
+        assert (WEBTERM_STATIC_PATH / "js" / "ghostty-vt.wasm").exists()
 
 
 class TestLocalServer:
@@ -441,7 +441,6 @@ class TestLocalServerMoreCoverage:
         request.secure = False
 
         resp = await server_with_no_apps._handle_root(request)
-        assert "/static/css/xterm.css" in resp.text
         assert "/static/monospace.css" in resp.text
         assert "/static/js/terminal.js" in resp.text
         assert "data-session-websocket-url" in resp.text

@@ -18,7 +18,7 @@ class TestLocalServer:
         """Test that static path contains required assets."""
         assert WEBTERM_STATIC_PATH is not None
         assert (WEBTERM_STATIC_PATH / "js" / "terminal.js").exists()
-        assert (WEBTERM_STATIC_PATH / "css" / "xterm.css").exists()
+        assert (WEBTERM_STATIC_PATH / "js" / "ghostty-vt.wasm").exists()
 
     def test_create_server(self, tmp_path) -> None:
         """Test creating a LocalServer instance."""

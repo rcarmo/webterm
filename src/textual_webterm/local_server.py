@@ -846,7 +846,6 @@ class LocalServer:
 <html>
 <head>
     <title>{page_title}</title>
-    <link rel=\"stylesheet\" href=\"/static/css/xterm.css\">
     <link rel=\"stylesheet\" href=\"/static/monospace.css\">
     <style>
       html, body {{ width: 100%; height: 100%; }}
