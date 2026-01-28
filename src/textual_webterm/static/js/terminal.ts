@@ -557,7 +557,7 @@ class WebTerminal {
       <button data-key="\\x1b[B" title="Down">↓</button>
       <button data-key="\\x1b[D" title="Left">←</button>
       <button data-key="\\x1b[C" title="Right">→</button>
-      <button data-key="\\r" title="Return" class="keybar-return">⏎</button>
+      <button data-key="\\x0d" title="Return" class="keybar-return">⏎</button>
     `;
 
     // Inject styles

@@ -25,7 +25,7 @@ var c=Object.defineProperty;var C=(V,Z)=>{for(var $ in Z)c(V,$,{get:Z[$],enumera
       <button data-key="\\x1b[B" title="Down">↓</button>
       <button data-key="\\x1b[D" title="Left">←</button>
       <button data-key="\\x1b[C" title="Right">→</button>
-      <button data-key="\\r" title="Return" class="keybar-return">⏎</button>
+      <button data-key="\\x0d" title="Return" class="keybar-return">⏎</button>
     `;let Z=document.createElement("style");Z.textContent=`
       .mobile-keybar {
         position: fixed;
