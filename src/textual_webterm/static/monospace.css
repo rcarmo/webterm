@@ -8,9 +8,17 @@ We avoid external font fetching (e.g. Google Fonts) to keep local server self-co
   --textual-webterm-mono: ui-monospace, "SFMono-Regular", "FiraCode Nerd Font",
     "FiraMono Nerd Font", "Fira Code", "Roboto Mono", Menlo, Monaco, Consolas,
     "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  --terminal-min-width: 10px;
+  --terminal-min-height: 5px;
 }
 
-body {
+html, body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  box-sizing: border-box;
   font-family: var(--textual-webterm-mono);
 }
 
@@ -21,10 +29,74 @@ body {
   If Roboto Mono isn't available, it falls back to Courier and looks wrong.
   We override that here with higher specificity + !important.
 */
+.textual-terminal {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: var(--terminal-min-width);
+  min-height: var(--terminal-min-height);
+  position: relative;
+  overflow: hidden;
+  contain: strict; /* Performance optimization */
+}
+
 .textual-terminal .xterm,
 .textual-terminal .xterm .xterm-rows,
 .textual-terminal .xterm .xterm-helper-textarea,
 .textual-terminal .xterm .xterm-viewport,
 .textual-terminal .xterm .xterm-screen {
   font-family: var(--textual-webterm-mono) !important;
+}
+
+/* Critical layout fixes for xterm.js */
+.textual-terminal .xterm {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+.textual-terminal .xterm .xterm-viewport {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+.textual-terminal .xterm .xterm-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+/* High DPI display handling */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .textual-terminal {
+    /* Consider adjusting font sizes for high DPI */
+    font-size: 14px;
+  }
+}
+
+/* Fallback for older browsers */
+@supports not (display: flex) {
+  .textual-terminal {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
 }

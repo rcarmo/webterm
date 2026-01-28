@@ -59,6 +59,20 @@ class WebTerminal {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
+  private resizeState: {
+    isResizing: boolean;
+    lastValidSize: {cols: number, rows: number} | null;
+    pendingResize: {cols: number, rows: number} | null;
+    resizeAttempts: number;
+  } = {
+    isResizing: false,
+    lastValidSize: null,
+    pendingResize: null,
+    resizeAttempts: 0
+  };
+  private messageQueue: [string, unknown][] | null = null;
+  private minResizeInterval = 50; // ms
+  private lastResizeTime = 0;
 
   constructor(container: HTMLElement, wsUrl: string, config: TerminalConfig = {}) {
     this.element = container;
@@ -112,19 +126,47 @@ class WebTerminal {
       this.send(["stdin", data]);
     });
 
-    // Handle resize
+    // Handle resize with validation
     this.terminal.onResize(({ cols, rows }) => {
-      this.send(["resize", { width: cols, height: rows }]);
+      if (this.isValidSize(cols, rows)) {
+        this.resizeState.lastValidSize = { cols, rows };
+        this.send(["resize", { width: cols, height: rows }]);
+      } else {
+        console.warn(`Invalid resize dimensions: ${cols}x${rows}`);
+        if (this.resizeState.lastValidSize) {
+          // Restore valid size
+          this.terminal.resize(
+            this.resizeState.lastValidSize.cols,
+            this.resizeState.lastValidSize.rows
+          );
+        }
+      }
     });
 
     this.ensureInitialFit();
 
     // Fit to container and handle resize changes
     this.scheduleFit();
-    window.addEventListener("resize", () => this.scheduleFit());
+    
+    // Enhanced window resize handling with throttling
+    const throttledWindowResize = this.createThrottledHandler(() => this.scheduleFit(), 100);
+    window.addEventListener("resize", throttledWindowResize);
+    
+    // Enhanced resize observer that also watches parent elements
     if (window.ResizeObserver) {
-      this.resizeObserver = new ResizeObserver(() => this.scheduleFit());
+      this.resizeObserver = new ResizeObserver((entries) => {
+        // Debounce multiple entries from the same resize event
+        this.scheduleFit();
+      });
+      
       this.resizeObserver.observe(container);
+      
+      // Also observe parent elements up to body to catch layout changes
+      let parent = container.parentElement;
+      while (parent && parent !== document.body && parent !== document.documentElement) {
+        this.resizeObserver.observe(parent);
+        parent = parent.parentElement;
+      }
     }
 
     // Connect WebSocket
@@ -143,18 +185,67 @@ class WebTerminal {
   }
 
   /** Fit terminal to container size */
+  /** Fit terminal to container size with state management */
   fit(): void {
-    try {
-      this.fitAddon.fit();
-    } catch (e) {
-      console.warn("Fit failed:", e);
-    }
-  }
-
-  private scheduleFit(): void {
-    if (this.resizeRaf) {
+    const now = Date.now();
+    
+    // Throttle rapid resize attempts
+    if (now - this.lastResizeTime < this.minResizeInterval) {
       return;
     }
+    
+    if (this.resizeState.isResizing) {
+      return;
+    }
+    
+    try {
+      this.resizeState.isResizing = true;
+      this.resizeState.resizeAttempts++;
+      this.lastResizeTime = now;
+      
+      this.fitAddon.fit();
+      this.resizeState.resizeAttempts = 0; // Reset on success
+      
+    } catch (e) {
+      console.warn("Fit failed:", e);
+      this.handleResizeFailure();
+    } finally {
+      this.resizeState.isResizing = false;
+    }
+  }
+  
+  /** Handle resize failures with fallback logic */
+  private handleResizeFailure(): void {
+    if (this.resizeState.resizeAttempts > 3) {
+      if (this.resizeState.lastValidSize) {
+        // Restore last known good size
+        console.warn("Restoring last valid terminal size:", this.resizeState.lastValidSize);
+        this.terminal.resize(
+          this.resizeState.lastValidSize.cols,
+          this.resizeState.lastValidSize.rows
+        );
+      } else {
+        // Use reasonable fallback
+        const fallback = { cols: 80, rows: 24 };
+        console.warn("Using fallback terminal dimensions:", fallback);
+        this.terminal.resize(fallback.cols, fallback.rows);
+        this.resizeState.lastValidSize = fallback;
+      }
+      this.resizeState.resizeAttempts = 0;
+    }
+  }
+  
+  /** Validate terminal dimensions */
+  private isValidSize(cols: number, rows: number): boolean {
+    return cols >= 10 && cols <= 500 && rows >= 5 && rows <= 200;
+  }
+
+  /** Schedule fit operation with enhanced debouncing */
+  private scheduleFit(): void {
+    if (this.resizeRaf) {
+      window.cancelAnimationFrame(this.resizeRaf);
+    }
+    
     this.resizeRaf = window.requestAnimationFrame(() => {
       this.resizeRaf = 0;
       this.fit();
@@ -174,6 +265,9 @@ class WebTerminal {
       this.reconnectAttempts = 0;
       this.element.classList.add("-connected");
       this.element.classList.remove("-disconnected");
+
+      // Process any queued messages immediately
+      this.processMessageQueue();
 
       // Send initial size.
       // Important: the PTY hard-wraps output based on its initial cols/rows.
@@ -199,12 +293,22 @@ class WebTerminal {
               return;
             }
             this.terminal.resize(fallback.cols, fallback.rows);
+            this.resizeState.lastValidSize = fallback;
             this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
             return;
           }
 
-          this.terminal.resize(dims.cols, dims.rows);
-          this.send(["resize", { width: dims.cols, height: dims.rows }]);
+          // Validate dimensions before applying
+          if (this.isValidSize(dims.cols, dims.rows)) {
+            this.terminal.resize(dims.cols, dims.rows);
+            this.resizeState.lastValidSize = dims;
+            this.send(["resize", { width: dims.cols, height: dims.rows }]);
+          } else {
+            console.warn(`Initial fit produced invalid dimensions: ${dims.cols}x${dims.rows}, using fallback`);
+            this.terminal.resize(fallback.cols, fallback.rows);
+            this.resizeState.lastValidSize = fallback;
+            this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
+          }
         };
 
         window.requestAnimationFrame(() => attemptFitAndResize(0));
@@ -265,10 +369,46 @@ class WebTerminal {
     }
   }
 
-  /** Send message to server */
+  /** Send message to server with queueing support */
   private send(message: [string, unknown]): void {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(message));
+    // Initialize message queue if needed
+    if (!this.messageQueue) {
+      this.messageQueue = [];
+    }
+    
+    // Queue the message
+    this.messageQueue.push(message);
+    
+    // Process queue if connected
+    this.processMessageQueue();
+  }
+  
+  /** Process queued messages when WebSocket is ready */
+  private processMessageQueue(): void {
+    if (this.socket?.readyState !== WebSocket.OPEN || !this.messageQueue) {
+      return;
+    }
+    
+    // Process all queued messages
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue.shift();
+      try {
+        if (message) {
+          this.socket.send(JSON.stringify(message));
+          
+          // Special handling for resize messages
+          if (message[0] === "resize") {
+            this.resizeState.pendingResize = null;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to send message:", e, message);
+        // Put failed message back at front of queue
+        if (message) {
+          this.messageQueue.unshift(message);
+        }
+        break;
+      }
     }
   }
 
@@ -288,6 +428,29 @@ class WebTerminal {
     }, delay);
   }
 
+  /** Create throttled event handler */
+  private createThrottledHandler(func: Function, wait: number): () => void {
+    let lastCall = 0;
+    let timeoutId: number | null = null;
+    
+    return function(this: any, ...args: any[]) {
+      const now = Date.now();
+      
+      // Leading edge - execute immediately if not called recently
+      if (now - lastCall >= wait) {
+        lastCall = now;
+        func.apply(this, args);
+      } else if (!timeoutId) {
+        // Trailing edge - schedule execution after delay
+        timeoutId = window.setTimeout(() => {
+          timeoutId = null;
+          lastCall = Date.now();
+          func.apply(this, args);
+        }, wait);
+      }
+    }.bind(this);
+  }
+  
   /** Clean up resources */
   dispose(): void {
     if (this.resizeObserver) {
