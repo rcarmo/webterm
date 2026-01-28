@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "ghostty-web": "^0.1.0"
+    "ghostty-web": "github:rcarmo/ghostty-web"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

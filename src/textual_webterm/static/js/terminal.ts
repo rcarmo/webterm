@@ -6,7 +6,7 @@
  * - Server → Client: ["stdout", data], ["pong", data], or binary frames
  */
 
-import { Terminal, FitAddon, type ITerminalOptions, type ITheme } from "ghostty-web";
+import { Terminal, FitAddon, Ghostty, type ITerminalOptions, type ITheme } from "ghostty-web";
 
 /** Default font stack - prefers system monospace, falls back through programming fonts */
 const DEFAULT_FONT_FAMILY =
@@ -275,187 +275,6 @@ const THEMES: Record<string, ITheme> = {
   },
 };
 
-/**
- * ghostty-web's internal default palette (Tomorrow Night theme).
- * This is what the WASM terminal uses to resolve ANSI color codes to RGB.
- * We need to know these to remap them to our custom theme.
- */
-const GHOSTTY_DEFAULT_PALETTE: ITheme = {
-  foreground: "#c5c8c6",
-  background: "#1d1f21",
-  cursor: "#c5c8c6",
-  cursorAccent: "#1d1f21",
-  selectionBackground: "#373b41",
-  black: "#1d1f21",
-  red: "#cc6666",
-  green: "#b5bd68",
-  yellow: "#f0c674",
-  blue: "#81a2be",
-  magenta: "#b294bb",
-  cyan: "#8abeb7",
-  white: "#c5c8c6",
-  brightBlack: "#969896",
-  brightRed: "#cc6666",
-  brightGreen: "#b5bd68",
-  brightYellow: "#f0c674",
-  brightBlue: "#81a2be",
-  brightMagenta: "#b294bb",
-  brightCyan: "#8abeb7",
-  brightWhite: "#ffffff",
-};
-
-/** Convert hex color to RGB tuple */
-function hexToRgb(hex: string): [number, number, number] {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) return [0, 0, 0];
-  return [
-    parseInt(result[1], 16),
-    parseInt(result[2], 16),
-    parseInt(result[3], 16),
-  ];
-}
-
-/**
- * Build a fast lookup table for color remapping.
- * Uses a flat Uint8Array indexed by packed RGB (r << 16 | g << 8 | b) % tableSize.
- * Returns null for unmapped colors (non-palette colors like 256-color/truecolor).
- */
-function buildColorLookup(theme: ITheme): {
-  lookup: Uint32Array;
-  hasMapping: Uint8Array;
-} {
-  // Use a hash table with separate chaining avoided by using unique keys
-  // Since we only have 18 colors, a small table with direct indexing works
-  const TABLE_SIZE = 65536; // 2^16 - good for sparse lookups
-  const lookup = new Uint32Array(TABLE_SIZE);
-  const hasMapping = new Uint8Array(TABLE_SIZE);
-  
-  const colorKeys: (keyof ITheme)[] = [
-    'foreground', 'background',
-    'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
-    'brightBlack', 'brightRed', 'brightGreen', 'brightYellow',
-    'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite',
-  ];
-  
-  for (const key of colorKeys) {
-    const defaultColor = GHOSTTY_DEFAULT_PALETTE[key];
-    const themeColor = theme[key];
-    if (defaultColor && themeColor) {
-      const [dr, dg, db] = hexToRgb(defaultColor);
-      const [tr, tg, tb] = hexToRgb(themeColor);
-      // Hash: use lower bits of combined RGB
-      const hash = ((dr * 31 + dg) * 31 + db) & (TABLE_SIZE - 1);
-      // Pack theme RGB into uint32: r | g << 8 | b << 16
-      lookup[hash] = tr | (tg << 8) | (tb << 16);
-      hasMapping[hash] = 1;
-    }
-  }
-  
-  return { lookup, hasMapping };
-}
-
-/** Compute hash for RGB color (must match buildColorLookup) */
-function colorHash(r: number, g: number, b: number): number {
-  return ((r * 31 + g) * 31 + b) & 65535;
-}
-
-/**
- * Patch the WASM terminal's getLine method to remap colors at the source.
- * This is more efficient than patching renderCell since it processes
- * colors once per line fetch rather than once per cell render.
- */
-function patchWasmColors(terminal: Terminal, theme: ITheme): void {
-  const internalTerminal = terminal as unknown as Record<string, unknown>;
-  const wasmTerminal = internalTerminal.terminal as Record<string, unknown> | undefined;
-  
-  if (!wasmTerminal) {
-    console.warn("[webterm:patch] No WASM terminal found, cannot patch colors");
-    return;
-  }
-  
-  const { lookup, hasMapping } = buildColorLookup(theme);
-  console.log("[webterm:patch] Built optimized color lookup table");
-  
-  // Patch getLine to remap colors in returned cells
-  const originalGetLine = wasmTerminal.getLine as (row: number) => Array<{
-    fg_r: number; fg_g: number; fg_b: number;
-    bg_r: number; bg_g: number; bg_b: number;
-    [key: string]: unknown;
-  }> | null;
-  
-  if (!originalGetLine) {
-    console.warn("[webterm:patch] No getLine method found on WASM terminal");
-    return;
-  }
-  
-  wasmTerminal.getLine = function(row: number) {
-    const cells = originalGetLine.call(this, row);
-    if (!cells) return cells;
-    
-    // Remap colors in-place for performance
-    for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i];
-      
-      // Remap foreground
-      const fgHash = colorHash(cell.fg_r, cell.fg_g, cell.fg_b);
-      if (hasMapping[fgHash]) {
-        const packed = lookup[fgHash];
-        cell.fg_r = packed & 0xff;
-        cell.fg_g = (packed >> 8) & 0xff;
-        cell.fg_b = (packed >> 16) & 0xff;
-      }
-      
-      // Remap background
-      const bgHash = colorHash(cell.bg_r, cell.bg_g, cell.bg_b);
-      if (hasMapping[bgHash]) {
-        const packed = lookup[bgHash];
-        cell.bg_r = packed & 0xff;
-        cell.bg_g = (packed >> 8) & 0xff;
-        cell.bg_b = (packed >> 16) & 0xff;
-      }
-    }
-    
-    return cells;
-  };
-  
-  // Also patch getScrollbackLine for scrollback rendering
-  const originalGetScrollbackLine = wasmTerminal.getScrollbackLine as (offset: number) => Array<{
-    fg_r: number; fg_g: number; fg_b: number;
-    bg_r: number; bg_g: number; bg_b: number;
-    [key: string]: unknown;
-  }> | null;
-  
-  if (originalGetScrollbackLine) {
-    wasmTerminal.getScrollbackLine = function(offset: number) {
-      const cells = originalGetScrollbackLine.call(this, offset);
-      if (!cells) return cells;
-      
-      for (let i = 0; i < cells.length; i++) {
-        const cell = cells[i];
-        
-        const fgHash = colorHash(cell.fg_r, cell.fg_g, cell.fg_b);
-        if (hasMapping[fgHash]) {
-          const packed = lookup[fgHash];
-          cell.fg_r = packed & 0xff;
-          cell.fg_g = (packed >> 8) & 0xff;
-          cell.fg_b = (packed >> 16) & 0xff;
-        }
-        
-        const bgHash = colorHash(cell.bg_r, cell.bg_g, cell.bg_b);
-        if (hasMapping[bgHash]) {
-          const packed = lookup[bgHash];
-          cell.bg_r = packed & 0xff;
-          cell.bg_g = (packed >> 8) & 0xff;
-          cell.bg_b = (packed >> 16) & 0xff;
-        }
-      }
-      
-      return cells;
-    };
-  }
-  
-  console.log("[webterm:patch] Successfully patched WASM getLine/getScrollbackLine for theme colors");
-}
 
 /** Configuration options passed via data attributes or window config */
 interface TerminalConfig {
@@ -580,9 +399,12 @@ class WebTerminal {
     console.log("[webterm:create] wsUrl:", wsUrl);
     console.log("[webterm:create] Config received:", JSON.stringify(config, null, 2));
     
-    // Determine WASM path - try to find it relative to the script location
+    // Determine WASM path and pre-load Ghostty
     const wasmPath = getWasmPath();
     console.log("[webterm:create] WASM path:", wasmPath);
+    console.log("[webterm:create] Loading Ghostty WASM...");
+    const ghostty = await Ghostty.load(wasmPath);
+    console.log("[webterm:create] Ghostty loaded:", ghostty);
     
     // Build terminal options
     const themeToUse = config.theme ?? THEMES.xterm;
@@ -595,7 +417,7 @@ class WebTerminal {
       cursorBlink: true,
       cursorStyle: "block",
       theme: themeToUse,
-      wasmPath,
+      ghostty,
     };
     console.log("[webterm:create] Full ITerminalOptions:", JSON.stringify(options, null, 2));
 
@@ -609,13 +431,10 @@ class WebTerminal {
     console.log("[webterm:create] Loading FitAddon into terminal...");
     terminal.loadAddon(fitAddon);
 
-    // Open terminal (this loads WASM and initializes everything)
+    // Open terminal (initializes rendering - WASM already loaded)
     console.log("[webterm:create] Calling terminal.open(container)...");
-    await terminal.open(container);
+    terminal.open(container);
     console.log("[webterm:create] terminal.open() completed");
-    
-    // Patch WASM terminal to remap colors from ghostty-web's default palette to our theme
-    patchWasmColors(terminal, themeToUse);
     
     // Check internal state after open
     const internalTerminal = terminal as unknown as Record<string, unknown>;
