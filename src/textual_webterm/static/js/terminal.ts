@@ -342,15 +342,15 @@ class WebTerminal {
   private initialize(): void {
     // Wait for fonts to load before fitting to ensure correct measurements
     this.waitForFonts().then(() => {
-      this.fitAddon.fit();
+      this.fit();
     });
     
-    // Start observing resize immediately
-    this.fitAddon.observeResize();
+    // Setup resize observer (we use our own fit method, not FitAddon's)
+    this.setupResizeObserver();
 
     // Handle window resize (some browsers don't trigger ResizeObserver on window resize)
     window.addEventListener("resize", () => {
-      this.fitAddon.fit();
+      this.fit();
     });
 
     // Handle terminal input
@@ -479,6 +479,61 @@ class WebTerminal {
       // Ignore font loading errors
     }
   }
+
+  /** 
+   * Custom fit method that doesn't reserve space for scrollbar.
+   * The FitAddon subtracts 15px for a scrollbar, but ghostty-web
+   * uses canvas rendering without a visible scrollbar.
+   */
+  private fit(): void {
+    const renderer = (this.terminal as unknown as { renderer?: { getMetrics?: () => { width: number; height: number } } }).renderer;
+    if (!renderer?.getMetrics) {
+      // Fall back to FitAddon if we can't access renderer
+      this.fitAddon.fit();
+      return;
+    }
+    
+    const metrics = renderer.getMetrics();
+    if (!metrics || metrics.width === 0 || metrics.height === 0) {
+      return;
+    }
+
+    const style = window.getComputedStyle(this.element);
+    const paddingTop = parseInt(style.paddingTop) || 0;
+    const paddingBottom = parseInt(style.paddingBottom) || 0;
+    const paddingLeft = parseInt(style.paddingLeft) || 0;
+    const paddingRight = parseInt(style.paddingRight) || 0;
+
+    const availableWidth = this.element.clientWidth - paddingLeft - paddingRight;
+    const availableHeight = this.element.clientHeight - paddingTop - paddingBottom;
+
+    if (availableWidth <= 0 || availableHeight <= 0) {
+      return;
+    }
+
+    const cols = Math.max(2, Math.floor(availableWidth / metrics.width));
+    const rows = Math.max(1, Math.floor(availableHeight / metrics.height));
+
+    if (cols !== this.terminal.cols || rows !== this.terminal.rows) {
+      this.terminal.resize(cols, rows);
+    }
+  }
+
+  /** Setup resize observer for container */
+  private setupResizeObserver(): void {
+    const resizeObserver = new ResizeObserver(() => {
+      // Debounce resize events
+      if (this.resizeDebounceTimer) {
+        clearTimeout(this.resizeDebounceTimer);
+      }
+      this.resizeDebounceTimer = window.setTimeout(() => {
+        this.fit();
+      }, 100);
+    });
+    resizeObserver.observe(this.element);
+  }
+
+  private resizeDebounceTimer: number | undefined;
 
   /** Validate terminal dimensions */
   private isValidSize(cols: number, rows: number): boolean {
