@@ -1,6 +1,6 @@
-# Roadmap: Migration to xterm.js 6.0 with Bun
+# Roadmap: Migration to ghostty-web
 
-This document outlines the plan for bundling xterm.js 6.0 directly, replacing the dependency on textual-serve's bundled `textual.js`.
+This document outlines the plan for bundling ghostty-web directly, replacing the dependency on textual-serve's bundled `textual.js`.
 
 ## Status: ✅ Complete
 
@@ -11,37 +11,41 @@ The migration has been implemented on the `upstream-xterm` branch.
 - [x] **Phase 1: Tooling Setup** - Added `package.json`, `bunfig.toml`, Makefile targets
 - [x] **Phase 2: Terminal Client** - Created `terminal.ts` with full WebSocket protocol
 - [x] **Phase 3: Server Integration** - Updated HTML template, removed monkey-patch
-- [x] **Phase 4: Configuration** - Added `data-scrollback` attribute support
+- [x] **Phase 4: Configuration** - Added CLI options for theme, font-family, font-size
 - [x] **Phase 5: Remove Dependency** - Dropped `textual-serve` from pyproject.toml
 - [x] **Phase 6: Documentation** - Updated README.md and ARCHITECTURE.md
+- [x] **Phase 7: Mobile Support** - Added hidden textarea for iOS Safari keyboard
 
 ### Key Outcomes
 
-| Metric | Before | After |
-|--------|--------|-------|
+| Metric | Before (xterm.js) | After (ghostty-web) |
+|--------|-------------------|---------------------|
 | textual-serve dependency | Required | ❌ Removed |
+| Terminal engine | xterm.js 6.0 | ghostty-web (Ghostty VT parser via WASM) |
 | Scrollback history | 0 (none) | 1000 (configurable) |
-| Font configuration | Monkey-patch workaround | Direct configuration |
-| Bundle size | 502 KB + 381 KB fonts | 560 KB total |
-| xterm.js version | Unknown (5.x?) | 6.0.0 |
+| Theme configuration | None | 9 built-in themes via `--theme` |
+| Font configuration | Monkey-patch workaround | `--font-family` and `--font-size` CLI options |
+| Mobile Safari | No keyboard | ✅ Hidden textarea for keyboard input |
+| Bundle size | 560 KB | 1.14 MB (includes WASM parser) |
 
 ### Files Changed
 
 ```
 Added:
-  package.json              # xterm.js 6.0 + addons
-  bunfig.toml               # Bun configuration
-  src/.../static/js/terminal.ts   # TypeScript source
-  src/.../static/js/terminal.js   # Pre-built bundle (committed)
-  src/.../static/css/xterm.css    # xterm.js styles
+  package.json                        # ghostty-web + TypeScript
+  bunfig.toml                         # Bun configuration
+  src/.../static/js/terminal.ts       # TypeScript source
+  src/.../static/js/terminal.js       # Pre-built bundle (committed)
+  src/.../static/js/ghostty-vt.wasm   # Ghostty VT100 parser
 
 Modified:
   pyproject.toml            # Removed textual-serve dependency
-  Makefile                  # Added bundle/bundle-watch targets
+  Makefile                  # Added bundle/bundle-watch/bump-patch targets
   .gitignore                # Added node_modules/
-  src/.../local_server.py   # Simplified HTML template
+  src/.../cli.py            # Added --theme, --font-family, --font-size
+  src/.../local_server.py   # Pass theme/font config to HTML template
   docs/ARCHITECTURE.md      # Updated file structure
-  README.md                 # Added frontend dev instructions
+  README.md                 # Added frontend dev instructions, new CLI options
 ```
 
 ### For Users
@@ -67,6 +71,9 @@ make bundle
 
 # Or watch for changes during development
 make bundle-watch
+
+# Bump patch version
+make bump-patch
 ```
 
 ---
@@ -75,41 +82,25 @@ make bundle-watch
 
 The sections below document the original analysis that led to this migration.
 
-### What textual-serve Provides
+### What textual-serve Provided
 
-| Asset | Size | What We Use | Required? |
-|-------|------|-------------|-----------|
+| Asset | Size | What We Used | Required? |
+|-------|------|--------------|-----------|
 | `static/js/textual.js` | 502 KB | xterm.js + WebSocket client | **Yes** |
 | `static/css/xterm.css` | 4.6 KB | Terminal styling | **Yes** |
 | `static/fonts/RobotoMono*.ttf` | 381 KB | Roboto Mono font | No (we override font) |
 | `static/images/background.png` | 58 KB | Background image | No |
 | **Total** | **948 KB** | | |
 
-### What textual.js Bundle Contains
+### Why We Switched to ghostty-web
 
-The minified `textual.js` bundles:
-
-```
-xterm.js (core terminal)
-├── @xterm/addon-fit        (auto-resize to container)
-├── @xterm/addon-webgl      (GPU-accelerated rendering)
-├── @xterm/addon-canvas     (fallback 2D canvas renderer)
-├── @xterm/addon-unicode11  (wide character support)
-├── @xterm/addon-web-links  (clickable URLs)
-├── @xterm/addon-clipboard  (clipboard integration)
-└── WebSocket client wrapper (class w)
-```
-
-### Hardcoded Configuration in textual.js
-
-```javascript
-new Terminal({
-  allowProposedApi: true,
-  fontSize: /* from data-font-size attribute */,
-  scrollback: 0,           // ❌ No scrollback history
-  fontFamily: "'Roboto Mono', Monaco, 'Courier New', monospace"  // ❌ Hardcoded
-})
-```
+| Benefit | Impact |
+|---------|--------|
+| **Production-tested VT100 parser** | Ghostty's parser handles edge cases correctly |
+| **xterm.js API compatibility** | Easy migration, familiar API |
+| **Full configuration control** | Theme, font, scrollback via CLI |
+| **Mobile Safari support** | Hidden textarea triggers keyboard |
+| **Modern features** | RGB colors, better cursor handling |
 
 ### WebSocket Protocol (Fully Compatible)
 

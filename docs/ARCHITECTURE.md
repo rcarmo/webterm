@@ -186,14 +186,15 @@ JSON-encoded messages over WebSocket:
 
 ## Key Design Decisions
 
-### Why bundle xterm.js directly?
+### Why bundle ghostty-web directly?
 
-We bundle xterm.js 6.0 directly rather than using textual-serve because:
+We bundle [ghostty-web](https://github.com/coder/ghostty-web) directly for:
 
-- **Full configuration control** - fontFamily, scrollback, theme are configurable
-- **No workarounds needed** - xterm.js uses canvas rendering which ignores CSS fonts
-- **Smaller footprint** - No unused fonts or images from textual-serve
-- **Latest features** - xterm.js 6.0 includes ligature support, synchronized output, etc.
+- **Production-tested VT100 parser** - Uses Ghostty's battle-tested parser via WebAssembly
+- **Full configuration control** - fontFamily, scrollback, theme are configurable via CLI
+- **xterm.js API compatibility** - Drop-in replacement with familiar API
+- **Mobile support** - Custom keyboard handling for iOS Safari and Android
+- **9 built-in themes** - monokai, dark, light, dracula, catppuccin, nord, gruvbox, solarized, tokyo
 
 The pre-built `terminal.js` bundle is committed to the repo so users can `pip install` without needing Node.js/Bun.
 
@@ -242,8 +243,8 @@ src/textual_webterm/
 ├── constants.py        # Platform constants
 └── static/
     ├── monospace.css   # Font stack CSS variables
-    ├── css/xterm.css   # xterm.js styles
     └── js/
-        ├── terminal.ts # xterm.js client source (TypeScript)
-        └── terminal.js # Pre-built bundle (committed)
+        ├── terminal.ts     # ghostty-web client source (TypeScript)
+        ├── terminal.js     # Pre-built bundle (committed)
+        └── ghostty-vt.wasm # Ghostty VT100 parser (WebAssembly)
 ```
