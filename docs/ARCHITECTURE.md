@@ -4,17 +4,19 @@ This document describes the internal architecture of textual-webterm.
 
 ## Overview
 
-textual-webterm is a web-based terminal server that exposes terminal sessions (or Textual apps) over HTTP and WebSocket. It's designed to run behind a reverse proxy with authentication.
+textual-webterm is a web-based terminal server that exposes terminal sessions over HTTP and WebSocket. It's designed to run behind a reverse proxy with authentication.
+
+> **Note:** As of v1.0.0, this project uses [ghostty-web](https://github.com/rcarmo/ghostty-web) (a patched fork with native theme support) instead of xterm.js. Textual app support has been deprecated in favor of direct terminal access.
 
 ```
 ┌─────────────┐      ┌──────────────────────────────────────────────────┐
 │   Browser   │─────▶│                 local_server.py                  │
-│             │◀─────│              (aiohttp web server)                │
-└─────────────┘      │                                                  │
-       │             │  ┌──────────────┐  ┌──────────────────────────┐  │
-       │ WebSocket   │  │ session_     │  │ terminal_session.py      │  │
-       └────────────▶│  │ manager.py   │──│ (PTY + pyte emulator)    │  │
-                     │  └──────────────┘  └──────────────────────────┘  │
+│ (ghostty-   │◀─────│              (aiohttp web server)                │
+│   web)      │      │                                                  │
+└─────────────┘      │  ┌──────────────┐  ┌──────────────────────────┐  │
+       │             │  │ session_     │  │ terminal_session.py      │  │
+       │ WebSocket   │  │ manager.py   │──│ (PTY + pyte emulator)    │  │
+       └────────────▶│  └──────────────┘  └──────────────────────────┘  │
                      │                                                  │
                      │  ┌──────────────┐  ┌──────────────────────────┐  │
                      │  │ poller.py    │  │ docker_stats.py          │  │
@@ -188,13 +190,15 @@ JSON-encoded messages over WebSocket:
 
 ### Why bundle ghostty-web directly?
 
-We bundle [ghostty-web](https://github.com/coder/ghostty-web) directly for:
+We bundle a [patched version of ghostty-web](https://github.com/rcarmo/ghostty-web) for:
 
+- **Native theme support** - Theme colors are passed directly to WASM, no runtime remapping needed
 - **Production-tested VT100 parser** - Uses Ghostty's battle-tested parser via WebAssembly
 - **Full configuration control** - fontFamily, scrollback, theme are configurable via CLI
-- **xterm.js API compatibility** - Drop-in replacement with familiar API
+- **IME support** - Proper input method support for CJK languages
 - **Mobile support** - Custom keyboard handling for iOS Safari and Android
-- **9 built-in themes** - monokai, dark, light, dracula, catppuccin, nord, gruvbox, solarized, tokyo
+- **Smaller bundle** - ~0.67 MB (down from 1.16 MB with color patching)
+- **11 built-in themes** - xterm, monokai, ristretto, dark, light, dracula, catppuccin, nord, gruvbox, solarized, tokyo
 
 The pre-built `terminal.js` bundle is committed to the repo so users can `pip install` without needing Node.js/Bun.
 

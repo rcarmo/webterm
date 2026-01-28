@@ -1,10 +1,10 @@
 # Roadmap: Migration to ghostty-web
 
-This document outlines the plan for bundling ghostty-web directly, replacing the dependency on textual-serve's bundled `textual.js`.
+This document outlines the completed migration from xterm.js/textual-serve to ghostty-web.
 
-## Status: ✅ Complete
+## Status: ✅ Complete (v1.0.0)
 
-The migration has been implemented on the `upstream-xterm` branch.
+The migration has been completed and merged to `main`.
 
 ### What Was Done
 
@@ -15,18 +15,30 @@ The migration has been implemented on the `upstream-xterm` branch.
 - [x] **Phase 5: Remove Dependency** - Dropped `textual-serve` from pyproject.toml
 - [x] **Phase 6: Documentation** - Updated README.md and ARCHITECTURE.md
 - [x] **Phase 7: Mobile Support** - Added hidden textarea for iOS Safari keyboard
+- [x] **Phase 8: Native Theme Support** - Upgraded to patched ghostty-web with WASM palette support
 
 ### Key Outcomes
 
-| Metric | Before (xterm.js) | After (ghostty-web) |
-|--------|-------------------|---------------------|
+| Metric | Before (xterm.js) | After (ghostty-web 0.4.0) |
+|--------|-------------------|---------------------------|
 | textual-serve dependency | Required | ❌ Removed |
 | Terminal engine | xterm.js 6.0 | ghostty-web (Ghostty VT parser via WASM) |
+| Theme handling | Runtime color remapping | Native WASM palette support |
 | Scrollback history | 0 (none) | 1000 (configurable) |
-| Theme configuration | None | 9 built-in themes via `--theme` |
+| Theme configuration | None | 11 built-in themes via `--theme` |
 | Font configuration | Monkey-patch workaround | `--font-family` and `--font-size` CLI options |
 | Mobile Safari | No keyboard | ✅ Hidden textarea for keyboard input |
-| Bundle size | 560 KB | 1.14 MB (includes WASM parser) |
+| IME support | Limited | ✅ Full CJK input method support |
+| Bundle size | 1.16 MB | 0.67 MB |
+
+### ghostty-web Fork
+
+We use a [patched version of ghostty-web](https://github.com/rcarmo/ghostty-web) that adds:
+
+- Native theme/palette support at the WASM level via `buildWasmConfig()`
+- Theme colors passed directly to `createTerminal()` config
+- No runtime color remapping needed
+- IME input fixes for CJK languages
 
 ### Files Changed
 
@@ -34,26 +46,30 @@ The migration has been implemented on the `upstream-xterm` branch.
 Added:
   package.json                        # ghostty-web + TypeScript
   bunfig.toml                         # Bun configuration
+  tsconfig.json                       # TypeScript configuration
   src/.../static/js/terminal.ts       # TypeScript source
   src/.../static/js/terminal.js       # Pre-built bundle (committed)
   src/.../static/js/ghostty-vt.wasm   # Ghostty VT100 parser
 
 Modified:
-  pyproject.toml            # Removed textual-serve dependency
+  pyproject.toml            # Removed textual-serve dependency, version 1.0.0
   Makefile                  # Added bundle/bundle-watch/bump-patch targets
   .gitignore                # Added node_modules/
   src/.../cli.py            # Added --theme, --font-family, --font-size
   src/.../local_server.py   # Pass theme/font config to HTML template
-  docs/ARCHITECTURE.md      # Updated file structure
-  README.md                 # Added frontend dev instructions, new CLI options
+  docs/ARCHITECTURE.md      # Updated for ghostty-web
+  docs/ROADMAP.md           # Migration complete
+  README.md                 # Updated documentation
 ```
 
 ### For Users
 
-No action required. The pre-built `terminal.js` bundle is committed to the repo, so:
+No action required. The pre-built `terminal.js` bundle is committed to the repo:
 
 ```bash
-pip install git+https://github.com/rcarmo/textual-webterm.git@upstream-xterm
+pip install textual-webterm
+# or
+pip install git+https://github.com/rcarmo/textual-webterm.git
 ```
 
 Works without needing Node.js or Bun.
