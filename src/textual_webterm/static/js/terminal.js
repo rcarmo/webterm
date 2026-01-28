@@ -14543,6 +14543,10 @@ class WebTerminal {
     if (this.resizeState.isResizing) {
       return;
     }
+    if (!this.isTerminalReady()) {
+      console.debug("Terminal not ready for fit operation, skipping");
+      return;
+    }
     try {
       this.resizeState.isResizing = true;
       this.resizeState.resizeAttempts++;
@@ -14568,6 +14572,29 @@ class WebTerminal {
         this.resizeState.lastValidSize = fallback;
       }
       this.resizeState.resizeAttempts = 0;
+    }
+  }
+  isTerminalReady() {
+    try {
+      if (!this.terminal || !this.terminal._core) {
+        return false;
+      }
+      const core = this.terminal._core;
+      if (!core.viewport || !core.viewport.scrollBarWidth) {
+        return false;
+      }
+      const renderService = core._renderService;
+      if (!renderService || !renderService.dimensions) {
+        return false;
+      }
+      const dims = renderService.dimensions;
+      if (dims.css.cell.width === 0 || dims.css.cell.height === 0) {
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.warn("Terminal readiness check failed:", e);
+      return false;
     }
   }
   isValidSize(cols, rows) {
@@ -14615,12 +14642,13 @@ class WebTerminal {
             this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
             return;
           }
-          if (this.isValidSize(dims.cols, dims.rows)) {
+          if (dims && this.isValidSize(dims.cols, dims.rows) && this.isTerminalReady()) {
             this.terminal.resize(dims.cols, dims.rows);
             this.resizeState.lastValidSize = dims;
             this.send(["resize", { width: dims.cols, height: dims.rows }]);
           } else {
-            console.warn(`Initial fit produced invalid dimensions: ${dims.cols}x${dims.rows}, using fallback`);
+            const reason = !dims ? "proposeDimensions failed" : !this.isValidSize(dims.cols, dims.rows) ? `invalid dimensions: ${dims.cols}x${dims.rows}` : "terminal not ready";
+            console.warn(`Initial fit ${reason}, using fallback`);
             this.terminal.resize(fallback.cols, fallback.rows);
             this.resizeState.lastValidSize = fallback;
             this.send(["resize", { width: fallback.cols, height: fallback.rows }]);

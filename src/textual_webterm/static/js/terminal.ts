@@ -198,6 +198,12 @@ class WebTerminal {
       return;
     }
     
+    // Check if terminal is ready before attempting fit
+    if (!this.isTerminalReady()) {
+      console.debug("Terminal not ready for fit operation, skipping");
+      return;
+    }
+    
     try {
       this.resizeState.isResizing = true;
       this.resizeState.resizeAttempts++;
@@ -232,6 +238,38 @@ class WebTerminal {
         this.resizeState.lastValidSize = fallback;
       }
       this.resizeState.resizeAttempts = 0;
+    }
+  }
+  
+  /** Check if terminal is ready for resize operations */
+  private isTerminalReady(): boolean {
+    try {
+      // Check if terminal and its core components are initialized
+      if (!this.terminal || !this.terminal._core) {
+        return false;
+      }
+      
+      // Check if viewport is available (FitAddon requirement)
+      const core = this.terminal._core;
+      if (!core.viewport || !core.viewport.scrollBarWidth) {
+        return false;
+      }
+      
+      // Check if render service has valid dimensions
+      const renderService = core._renderService;
+      if (!renderService || !renderService.dimensions) {
+        return false;
+      }
+      
+      const dims = renderService.dimensions;
+      if (dims.css.cell.width === 0 || dims.css.cell.height === 0) {
+        return false;
+      }
+      
+      return true;
+    } catch (e) {
+      console.warn("Terminal readiness check failed:", e);
+      return false;
     }
   }
   
@@ -298,13 +336,16 @@ class WebTerminal {
             return;
           }
 
-          // Validate dimensions before applying
-          if (this.isValidSize(dims.cols, dims.rows)) {
+          // Validate dimensions and terminal readiness before applying
+          if (dims && this.isValidSize(dims.cols, dims.rows) && this.isTerminalReady()) {
             this.terminal.resize(dims.cols, dims.rows);
             this.resizeState.lastValidSize = dims;
             this.send(["resize", { width: dims.cols, height: dims.rows }]);
           } else {
-            console.warn(`Initial fit produced invalid dimensions: ${dims.cols}x${dims.rows}, using fallback`);
+            const reason = !dims ? "proposeDimensions failed" : 
+                          !this.isValidSize(dims.cols, dims.rows) ? `invalid dimensions: ${dims.cols}x${dims.rows}` :
+                          "terminal not ready";
+            console.warn(`Initial fit ${reason}, using fallback`);
             this.terminal.resize(fallback.cols, fallback.rows);
             this.resizeState.lastValidSize = fallback;
             this.send(["resize", { width: fallback.cols, height: fallback.rows }]);
