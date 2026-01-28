@@ -497,38 +497,66 @@ class WebTerminal {
     textarea.addEventListener("input", () => {
       const value = textarea.value;
       if (value) {
-        this.send(["stdin", value]);
+        let toSend = value;
+        // Apply Shift modifier (uppercase letters)
+        if (this.shiftActive && value.length === 1) {
+          toSend = value.toUpperCase();
+        }
+        // Apply Ctrl modifier if active (convert letters to control codes)
+        if (this.ctrlActive && value.length === 1) {
+          const code = toSend.toUpperCase().charCodeAt(0);
+          if (code >= 65 && code <= 90) {
+            toSend = String.fromCharCode(code - 64); // Ctrl+A = 0x01, Ctrl+D = 0x04, etc.
+          }
+        }
+        this.send(["stdin", toSend]);
         textarea.value = "";
+        this.deactivateModifiers();
       }
     });
 
     // Handle special navigation keys via keydown (not covered by beforeinput)
     textarea.addEventListener("keydown", (e) => {
       let seq: string | null = null;
+      let deactivate = false;
       switch (e.key) {
         case "Escape":
           seq = "\x1b";
+          deactivate = true;
           break;
         case "ArrowUp":
-          seq = "\x1b[A";
-          break;
         case "ArrowDown":
-          seq = "\x1b[B";
-          break;
         case "ArrowRight":
-          seq = "\x1b[C";
+        case "ArrowLeft": {
+          const dir = e.key === "ArrowUp" ? "A" : e.key === "ArrowDown" ? "B" : e.key === "ArrowRight" ? "C" : "D";
+          if (this.ctrlActive && this.shiftActive) {
+            seq = `\x1b[1;6${dir}`;
+          } else if (this.ctrlActive) {
+            seq = `\x1b[1;5${dir}`;
+          } else if (this.shiftActive) {
+            seq = `\x1b[1;2${dir}`;
+          } else {
+            seq = `\x1b[${dir}`;
+          }
+          deactivate = true;
           break;
-        case "ArrowLeft":
-          seq = "\x1b[D";
-          break;
+        }
         case "Tab":
-          seq = "\t";
+          if (this.shiftActive) {
+            seq = "\x1b[Z"; // Back-tab
+          } else {
+            seq = "\t";
+          }
           e.preventDefault();
+          deactivate = true;
           break;
       }
       if (seq) {
         e.preventDefault();
         this.send(["stdin", seq]);
+        if (deactivate) {
+          this.deactivateModifiers();
+        }
       }
     });
 
