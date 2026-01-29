@@ -662,6 +662,7 @@ class WebTerminal {
     // Handle input from mobile keyboard (regular text only, special keys handled above)
     textarea.addEventListener("input", () => {
       const value = textarea.value;
+      console.log("[webterm:mobile] input event fired, value:", value, "ctrlActive:", this.ctrlActive, "shiftActive:", this.shiftActive);
       if (value) {
         let toSend = value;
         // Apply Shift modifier (uppercase letters)
@@ -675,6 +676,7 @@ class WebTerminal {
             toSend = String.fromCharCode(code - 64); // Ctrl+A = 0x01, Ctrl+D = 0x04, etc.
           }
         }
+        console.log("[webterm:mobile] sending:", toSend.charCodeAt(0), "calling deactivateModifiers");
         this.send(["stdin", toSend]);
         textarea.value = "";
         this.deactivateModifiers();
@@ -938,6 +940,7 @@ class WebTerminal {
 
   /** Deactivate all modifiers */
   private deactivateModifiers(): void {
+    console.log("[webterm:mobile] deactivateModifiers called");
     this.ctrlActive = false;
     this.shiftActive = false;
     this.mobileKeybar?.querySelectorAll("button[data-modifier]").forEach((btn) => {
