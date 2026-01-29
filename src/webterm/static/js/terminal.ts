@@ -695,16 +695,15 @@ class WebTerminal {
         if (code >= 65 && code <= 90) {
           e.preventDefault();
           this.send(["stdin", String.fromCharCode(code - 64)]); // Ctrl+A=0x01, Ctrl+C=0x03, etc.
+          this.deactivateModifiers(); // Clear modifiers after physical Ctrl+letter
           return;
         }
       }
 
       let seq: string | null = null;
-      let deactivate = false;
       switch (e.key) {
         case "Escape":
           seq = "\x1b";
-          deactivate = true;
           break;
         case "ArrowUp":
         case "ArrowDown":
@@ -720,7 +719,6 @@ class WebTerminal {
           } else {
             seq = `\x1b[${dir}`;
           }
-          deactivate = true;
           break;
         }
         case "Tab":
@@ -730,15 +728,13 @@ class WebTerminal {
             seq = "\t";
           }
           e.preventDefault();
-          deactivate = true;
           break;
       }
       if (seq) {
         e.preventDefault();
         this.send(["stdin", seq]);
-        if (deactivate) {
-          this.deactivateModifiers();
-        }
+        // Always clear modifiers after any key
+        this.deactivateModifiers();
       }
     });
 
