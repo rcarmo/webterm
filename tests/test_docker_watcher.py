@@ -11,6 +11,7 @@ from webterm.docker_watcher import (
     LABEL_NAME,
     THEME_LABEL,
     DockerWatcher,
+    _has_webterm_label,
 )
 
 
@@ -289,3 +290,67 @@ async def test_watch_events_recovers_from_errors(docker_watcher, monkeypatch):
     monkeypatch.setattr("webterm.docker_watcher.asyncio.open_unix_connection", fail_once)
     monkeypatch.setattr("webterm.docker_watcher.asyncio.sleep", fake_sleep)
     await docker_watcher._watch_events()
+
+
+class TestHasWebtermLabel:
+    """Tests for _has_webterm_label helper."""
+
+    def test_has_command_label(self):
+        """Container with webterm-command label is detected."""
+        assert _has_webterm_label({LABEL_NAME: "auto"}) is True
+
+    def test_has_theme_label(self):
+        """Container with webterm-theme label is detected."""
+        assert _has_webterm_label({THEME_LABEL: "dracula"}) is True
+
+    def test_has_both_labels(self):
+        """Container with both labels is detected."""
+        assert _has_webterm_label({LABEL_NAME: "bash", THEME_LABEL: "dark"}) is True
+
+    def test_no_webterm_labels(self):
+        """Container without webterm labels is not detected."""
+        assert _has_webterm_label({"other-label": "value"}) is False
+
+    def test_empty_attributes(self):
+        """Empty attributes means no labels."""
+        assert _has_webterm_label({}) is False
+
+
+class TestHandleEventWithThemeLabel:
+    """Tests for event handling with theme-only labels."""
+
+    @pytest.mark.asyncio
+    async def test_handle_start_event_theme_only(self):
+        """Container with only theme label is picked up."""
+        manager = MagicMock()
+        manager.apps_by_slug = {}
+        manager.apps = []
+        watcher = DockerWatcher(manager)
+
+        async def mock_request(method, path):
+            if "/containers/" in path and "/json" in path:
+                import json
+                return 200, json.dumps({
+                    "Id": "abc123",
+                    "Name": "/themed-container",
+                    "Config": {"Labels": {THEME_LABEL: "monokai"}},
+                })
+            return 404, ""
+
+        watcher._docker_request = mock_request
+
+        event = {
+            "Action": "start",
+            "Actor": {
+                "ID": "abc123",
+                "Attributes": {THEME_LABEL: "monokai"},  # Only theme label
+            },
+        }
+
+        await watcher._handle_event(event)
+
+        # Should add container with auto command
+        manager.add_app.assert_called_once()
+        call_args = manager.add_app.call_args
+        assert call_args[0][1] == AUTO_COMMAND_SENTINEL  # command arg
+        assert call_args[1]["theme"] == "monokai"

@@ -22,9 +22,16 @@ log = logging.getLogger("webterm")
 
 LABEL_NAME = "webterm-command"
 THEME_LABEL = "webterm-theme"
+# All labels that trigger container inclusion
+WEBTERM_LABELS = (LABEL_NAME, THEME_LABEL)
 AUTO_COMMAND_ENV = "WEBTERM_DOCKER_AUTO_COMMAND"
 DEFAULT_COMMAND = "/bin/bash"
 AUTO_COMMAND_SENTINEL = "__docker_exec__"
+
+
+def _has_webterm_label(attributes: dict) -> bool:
+    """Check if a container has any webterm label."""
+    return any(label in attributes for label in WEBTERM_LABELS)
 
 
 def _get_auto_command() -> str:
@@ -117,13 +124,27 @@ class DockerWatcher:
             await writer.wait_closed()
 
     async def _get_labeled_containers(self) -> list[dict]:
-        """Get all running containers with webterm-command label."""
-        path = f'/containers/json?filters={{"label":["{LABEL_NAME}"]}}'
-        status, body = await self._docker_request("GET", path)
-        if status != 200:
-            log.error("Failed to list containers: %s", body)
-            return []
-        return json.loads(body)
+        """Get all running containers with any webterm label.
+
+        Queries for both webterm-command and webterm-theme labels,
+        merging results and deduplicating by container ID.
+        """
+        seen_ids: set[str] = set()
+        result: list[dict] = []
+
+        for label in WEBTERM_LABELS:
+            path = f'/containers/json?filters={{"label":["{label}"]}}'
+            status, body = await self._docker_request("GET", path)
+            if status != 200:
+                log.error("Failed to list containers for label %s: %s", label, body)
+                continue
+            for container in json.loads(body):
+                container_id = container.get("Id", "")
+                if container_id and container_id not in seen_ids:
+                    seen_ids.add(container_id)
+                    result.append(container)
+
+        return result
 
     def _get_container_command(self, container: dict) -> str:
         """Get command for container from label.
@@ -260,8 +281,8 @@ class DockerWatcher:
         container_id = actor.get("ID", "")
         attributes = actor.get("Attributes", {})
 
-        # Only handle containers with our label
-        if LABEL_NAME not in attributes:
+        # Only handle containers with any webterm label
+        if not _has_webterm_label(attributes):
             return
 
         if action == "start":
