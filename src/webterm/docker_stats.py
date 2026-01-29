@@ -81,6 +81,7 @@ class DockerStatsCollector:
         loop = asyncio.get_event_loop()
 
         def _sync_request() -> bytes | None:
+            sock: socket.socket | None = None
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.settimeout(10.0)  # Increased timeout
@@ -97,11 +98,13 @@ class DockerStatsCollector:
                     if not chunk:
                         break
                     chunks.append(chunk)
-                sock.close()
                 return b"".join(chunks)
             except (OSError, TimeoutError) as e:
                 log.debug("Socket error for %s: %s", path, e)
                 return None
+            finally:
+                if sock is not None:
+                    sock.close()
 
         response = await loop.run_in_executor(None, _sync_request)
         if response is None:

@@ -127,21 +127,23 @@ class DockerExecSession(Session):
 
     def _request_json(self, method: str, path: str, payload: dict | None = None) -> dict:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.connect(self._socket_path)
-        body = json.dumps(payload or {}).encode("utf-8") if payload is not None else b""
-        headers = [
-            f"{method} {path} HTTP/1.1",
-            "Host: localhost",
-        ]
-        if payload is not None:
-            headers.append("Content-Type: application/json")
-            headers.append(f"Content-Length: {len(body)}")
-        headers.append("")
-        headers.append("")
-        request = "\r\n".join(headers).encode("utf-8") + body
-        sock.sendall(request)
-        status, _headers, body_bytes = self._read_http_response(sock)
-        sock.close()
+        try:
+            sock.connect(self._socket_path)
+            body = json.dumps(payload or {}).encode("utf-8") if payload is not None else b""
+            headers = [
+                f"{method} {path} HTTP/1.1",
+                "Host: localhost",
+            ]
+            if payload is not None:
+                headers.append("Content-Type: application/json")
+                headers.append(f"Content-Length: {len(body)}")
+            headers.append("")
+            headers.append("")
+            request = "\r\n".join(headers).encode("utf-8") + body
+            sock.sendall(request)
+            status, _headers, body_bytes = self._read_http_response(sock)
+        finally:
+            sock.close()
         if status < 200 or status >= 300:
             detail = body_bytes.decode("utf-8", errors="replace")
             raise RuntimeError(f"Docker API request failed ({status}): {detail}")
@@ -170,28 +172,31 @@ class DockerExecSession(Session):
 
     def _start_exec_socket(self, exec_id: str) -> socket.socket:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.connect(self._socket_path)
-        payload = json.dumps({"Detach": False, "Tty": True}).encode("utf-8")
-        headers = [
-            f"POST /exec/{exec_id}/start HTTP/1.1",
-            "Host: localhost",
-            "Content-Type: application/json",
-            f"Content-Length: {len(payload)}",
-            "Connection: Upgrade",
-            "Upgrade: tcp",
-            "",
-            "",
-        ]
-        sock.sendall("\r\n".join(headers).encode("utf-8") + payload)
-        status, _headers, body = self._read_http_response(sock)
-        if status not in (101,) and (status < 200 or status >= 300):
+        try:
+            sock.connect(self._socket_path)
+            payload = json.dumps({"Detach": False, "Tty": True}).encode("utf-8")
+            headers = [
+                f"POST /exec/{exec_id}/start HTTP/1.1",
+                "Host: localhost",
+                "Content-Type: application/json",
+                f"Content-Length: {len(payload)}",
+                "Connection: Upgrade",
+                "Upgrade: tcp",
+                "",
+                "",
+            ]
+            sock.sendall("\r\n".join(headers).encode("utf-8") + payload)
+            status, _headers, body = self._read_http_response(sock)
+            if status not in (101,) and (status < 200 or status >= 300):
+                detail = body.decode("utf-8", errors="replace")
+                raise RuntimeError(f"Docker API exec start failed ({status}): {detail}")
+            # Don't save body from HTTP upgrade - it contains protocol handshake data,
+            # not real terminal output (e.g., device attribute responses like "\x1b[?1;10;0c")
+            sock.settimeout(None)
+            return sock
+        except Exception:
             sock.close()
-            detail = body.decode("utf-8", errors="replace")
-            raise RuntimeError(f"Docker API exec start failed ({status}): {detail}")
-        # Don't save body from HTTP upgrade - it contains protocol handshake data,
-        # not real terminal output (e.g., device attribute responses like "\x1b[?1;10;0c")
-        sock.settimeout(None)
-        return sock
+            raise
 
     def _resize_exec(self, width: int, height: int) -> None:
         assert self._exec_id is not None
