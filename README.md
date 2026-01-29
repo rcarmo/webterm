@@ -93,17 +93,19 @@ webterm --landing-manifest landing.yaml
 
 ### Docker Watch Mode
 
-Watch for Docker containers with the `webterm-command` label and dynamically add/remove terminal sessions:
+Watch for Docker containers with `webterm-command` **or** `webterm-theme` labels and dynamically add/remove terminal sessions:
 
 ```bash
 webterm --docker-watch
 ```
 
-When a container starts with the label, it automatically appears in the dashboard. When it stops, it's removed. Label values:
+When a container starts with either label, it automatically appears in the dashboard. When it stops, it's removed. Label values:
 
 - `webterm-command: auto` (or empty) - Opens a PTY via Docker exec API (override with `WEBTERM_DOCKER_AUTO_COMMAND`)
 - `webterm-command: <command>` - Runs the specified command
-- `webterm-theme: <theme>` - Sets the terminal theme for that container (xterm, monokai, dark, light, dracula, catppuccin, nord, gruvbox, solarized, tokyo)
+- `webterm-theme: <theme>` - Sets the terminal theme for that container (xterm, monokai, dark, light, dracula, catppuccin, nord, gruvbox, solarized, tokyo). Invalid themes fall back to `tango` and the page background defaults to black.
+
+Containers that only specify `webterm-theme` are still included and use the default auto command.
 
 Example docker-compose.yaml:
 
