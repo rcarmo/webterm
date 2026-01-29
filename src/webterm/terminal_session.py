@@ -7,6 +7,7 @@ import fcntl
 import logging
 import os
 import pty
+import re
 import shlex
 import signal
 import termios
@@ -30,6 +31,15 @@ REPLAY_BUFFER_SIZE = 256 * 1024  # 256KB
 # Default screen size for pyte emulator
 DEFAULT_SCREEN_WIDTH = 132
 DEFAULT_SCREEN_HEIGHT = 45
+
+# Pattern to filter out terminal device attribute responses that cause display issues
+# These are responses to DA1/DA2 queries that shouldn't be displayed as text
+# Matches complete responses like \x1b[?1;10;0c or \x1b[?64;1;2;...c
+DA_RESPONSE_PATTERN = re.compile(rb'\x1b\[\?[\d;]+c')
+
+# Pattern to detect partial DA responses at end of data (incomplete escape sequence)
+# Matches: \x1b, \x1b[, \x1b[?, \x1b[?1, \x1b[?1;, etc.
+DA_PARTIAL_PATTERN = re.compile(rb'\x1b(?:\[(?:\?[\d;]*)?)?$')
 
 
 class TerminalSession(Session):
@@ -60,6 +70,8 @@ class TerminalSession(Session):
         # Change counter for reliable activity detection (monotonically increasing)
         self._change_counter = 0
         self._last_snapshot_counter = 0
+        # Buffer for handling escape sequences split across reads
+        self._escape_buffer = b""
         super().__init__()
 
     def __repr__(self) -> str:
@@ -312,6 +324,26 @@ class TerminalSession(Session):
                 data = await queue.get()
                 if not data:
                     break
+
+                # Prepend any buffered partial escape sequence from previous read
+                if self._escape_buffer:
+                    data = self._escape_buffer + data
+                    self._escape_buffer = b""
+
+                # Filter out complete DA1/DA2 responses (e.g., \x1b[?1;10;0c)
+                data = DA_RESPONSE_PATTERN.sub(b'', data)
+                if not data:
+                    continue
+
+                # Check for partial escape sequence at end that might be a DA response
+                # Hold it back until we get more data to see if it completes
+                match = DA_PARTIAL_PATTERN.search(data)
+                if match:
+                    self._escape_buffer = data[match.start():]
+                    data = data[:match.start()]
+                    if not data:
+                        continue
+
                 # Store in replay buffer for reconnection
                 await self._add_to_replay_buffer(data)
                 # Update pyte screen state for screenshots
