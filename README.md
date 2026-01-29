@@ -107,6 +107,15 @@ When a container starts with either label, it automatically appears in the dashb
 
 Containers that only specify `webterm-theme` are still included and use the default auto command.
 
+**Environment Variables:**
+- `WEBTERM_DOCKER_USERNAME` - Set to run Docker exec sessions as a specific user (default: root)
+- `WEBTERM_DOCKER_AUTO_COMMAND` - Override the default `auto` command (default: `tmux new-session -As webterm`)
+
+Example: Start containers and exec into them as `developer` user:
+```bash
+WEBTERM_DOCKER_USERNAME=developer webterm --docker-watch
+```
+
 Example docker-compose.yaml:
 
 ```yaml

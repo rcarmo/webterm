@@ -43,6 +43,7 @@ DA_PARTIAL_PATTERN = re.compile(rb"\x1b(?:\[(?:\?[\d;]*)?)?$")
 class DockerExecSpec:
     container: str
     command: list[str]
+    user: str | None = None
 
 
 class DockerExecSession(Session):
@@ -162,6 +163,8 @@ class DockerExecSession(Session):
             "Tty": True,
             "Cmd": self.exec_spec.command,
         }
+        if self.exec_spec.user:
+            payload["User"] = self.exec_spec.user
         response = self._request_json(
             "POST", f"/containers/{self.exec_spec.container}/exec", payload
         )

@@ -214,6 +214,32 @@ class TestSessionManager:
 
             assert result is not None
             assert isinstance(result, DockerExecSession)
+            assert result.exec_spec.user is None
+
+    async def test_new_docker_exec_session_with_user(self, mock_poller, mock_path, monkeypatch):
+        from webterm.docker_exec_session import DockerExecSession
+
+        monkeypatch.setenv("WEBTERM_DOCKER_USERNAME", "testuser")
+
+        app = App(
+            name="my-container",
+            slug="my-container",
+            path="./",
+            command=AUTO_COMMAND_SENTINEL,
+            terminal=True,
+        )
+        manager = SessionManager(mock_poller, mock_path, [app])
+
+        with patch.object(DockerExecSession, "open", new_callable=AsyncMock):
+            result = await manager.new_session(
+                "my-container",
+                SessionID("test-session"),
+                RouteKey("test-route"),
+            )
+
+            assert result is not None
+            assert isinstance(result, DockerExecSession)
+            assert result.exec_spec.user == "testuser"
 
 
 class TestSessionManagerRoutes:

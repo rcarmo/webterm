@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shlex
 import sys
 from typing import TYPE_CHECKING
@@ -137,9 +138,11 @@ class SessionManager:
             log.warning("Sorry, webterm does not currently support terminals on Windows")
             return None
         if app.command == AUTO_COMMAND_SENTINEL:
+            docker_user = os.environ.get("WEBTERM_DOCKER_USERNAME")
             exec_spec = DockerExecSpec(
                 container=app.name,
                 command=shlex.split(_get_auto_command()),
+                user=docker_user,
             )
             session_process = DockerExecSession(self.poller, session_id, exec_spec)
         else:
