@@ -748,7 +748,7 @@ class WebTerminal {
       }
     });
 
-    // Clear keybar modifiers when physical keyboard input occurs outside the textarea.
+    // Apply keybar modifiers to physical keyboard input even when the textarea isn't focused.
     document.addEventListener("keydown", (event) => {
       if (!this.ctrlActive && !this.shiftActive) {
         return;
@@ -756,10 +756,73 @@ class WebTerminal {
       if (event.target === this.mobileInput) {
         return;
       }
-      if (["Shift", "Control", "Alt", "Meta"].includes(event.key)) {
-        return;
+
+      const useCtrl = this.ctrlActive;
+      const useShift = this.shiftActive;
+      let handled = false;
+
+      if (event.key.length === 1 && !event.altKey && !event.metaKey) {
+        let toSend = event.key;
+        if (useShift) {
+          toSend = toSend.toUpperCase();
+        }
+        if (useCtrl) {
+          const code = toSend.toUpperCase().charCodeAt(0);
+          if (code >= 65 && code <= 90) {
+            toSend = String.fromCharCode(code - 64);
+          }
+        }
+        event.preventDefault();
+        this.send(["stdin", toSend]);
+        handled = true;
+      } else {
+        let seq: string | null = null;
+        switch (event.key) {
+          case "Escape":
+            seq = "\x1b";
+            break;
+          case "ArrowUp":
+          case "ArrowDown":
+          case "ArrowRight":
+          case "ArrowLeft": {
+            const dir =
+              event.key === "ArrowUp"
+                ? "A"
+                : event.key === "ArrowDown"
+                  ? "B"
+                  : event.key === "ArrowRight"
+                    ? "C"
+                    : "D";
+            if (useCtrl && useShift) {
+              seq = `\x1b[1;6${dir}`;
+            } else if (useCtrl) {
+              seq = `\x1b[1;5${dir}`;
+            } else if (useShift) {
+              seq = `\x1b[1;2${dir}`;
+            } else {
+              seq = `\x1b[${dir}`;
+            }
+            break;
+          }
+          case "Tab":
+            if (useShift) {
+              seq = "\x1b[Z";
+            } else {
+              seq = "\t";
+            }
+            break;
+        }
+
+        if (seq) {
+          event.preventDefault();
+          this.send(["stdin", seq]);
+          handled = true;
+        }
       }
-      this.deactivateModifiers();
+
+      if (handled) {
+        this.deactivateModifiers();
+      }
     });
 
     // Focus textarea on touch/click to show mobile keyboard
