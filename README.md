@@ -2,7 +2,7 @@
 
 ![Icon](docs/icon-256.png)
 
-Serve terminal sessions over the web with a simple CLI command.
+Serve terminal sessions over the web with a simple CLI command. [Blog post](https://taoofmac.com/space/notes/2026/01/25/2030#seizing-the-means-of-production)
 
 > **Credit and Inspiration:** This project was originally based on the genius [web](https://github.com/Textualize/web) package, which uses `xterm.js`. It has been rewritten to use a [ghostty-web](https://github.com/coder/ghostty-web)'s WebAssembly-based terminal emulator, which provides better performance and native theme support. 
 
