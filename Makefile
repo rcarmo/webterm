@@ -97,5 +97,12 @@ bump-patch: ## Bump patch version and create git tag
 	git tag "v$$NEW"; \
 	echo "Bumped version: $$OLD -> $$NEW (tagged v$$NEW)"
 
-push: ## Push commits and tags to origin
-	git push origin main --tags
+push: ## Push commits and current tag to origin
+	@TAG=$$(git describe --tags --exact-match 2>/dev/null); \
+	git push origin main; \
+	if [ -n "$$TAG" ]; then \
+		echo "Pushing tag $$TAG..."; \
+		git push origin "$$TAG"; \
+	else \
+		echo "No tag on current commit"; \
+	fi

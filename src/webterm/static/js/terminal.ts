@@ -513,19 +513,31 @@ class WebTerminal {
     });
     
     // Wait for fonts to load before fitting to ensure correct measurements
+    //
+    // FONT INITIALIZATION (ghostty-web):
+    // -----------------------------------
+    // The font stack is set in two places:
+    // 1. At Terminal construction time via ITerminalOptions.fontFamily
+    //    - This sets the initial font for the renderer
+    // 2. After web fonts load via terminal.loadFonts()
+    //    - This re-measures font metrics and triggers a full re-render
+    //
+    // The loadFonts() method (added in ghostty-web commit feab41f9a8e4491f):
+    // - Calls renderer.remeasureFont() to recalculate cell dimensions
+    // - Calls handleFontChange() to resize canvas and re-render
+    //
+    // DO NOT manually set terminal.options.fontFamily or call renderer methods
+    // directly - use the public loadFonts() API which handles the full chain.
+    //
+    // See: https://github.com/rcarmo/ghostty-web/commit/feab41f9a8e4491f04688a6620974c3f7762a3d9
     this.waitForFonts().then(() => {
-      console.log("[webterm:init] Fonts loaded, reapplying font family and fitting...");
-      // IMPORTANT: Font updates require BOTH steps to work correctly:
-      // 1. Set terminal.options.fontFamily - stores the font stack for future reference
-      // 2. Call renderer.setFontFamily() + remeasureFont() - applies the font and recalculates metrics
-      // Without step 1, the font stack is lost and defaults are used on re-render.
-      // Without step 2, the renderer doesn't know about the new fonts.
-      this.terminal.options.fontFamily = this.fontFamily;
-      const renderer = (this.terminal as unknown as { renderer?: { setFontFamily: (family: string) => void; remeasureFont: () => void } }).renderer;
-      if (renderer) {
-        renderer.setFontFamily(this.fontFamily);
-        renderer.remeasureFont();
-        console.log("[webterm:init] Font family updated via renderer");
+      console.log("[webterm:init] Fonts loaded, triggering font reload...");
+      // Use the public loadFonts() API which properly handles font re-measurement
+      // and triggers handleFontChange() internally. This is the correct approach
+      // per ghostty-web commit feab41f9a8e4491f04688a6620974c3f7762a3d9
+      if (typeof (this.terminal as unknown as { loadFonts?: () => void }).loadFonts === "function") {
+        (this.terminal as unknown as { loadFonts: () => void }).loadFonts();
+        console.log("[webterm:init] terminal.loadFonts() called");
       }
       this.fit();
       console.log("[webterm:init] fit() completed");
