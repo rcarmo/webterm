@@ -314,7 +314,23 @@ function parseConfig(element: HTMLElement): TerminalConfig {
   const config: TerminalConfig = {};
 
   if (element.dataset.fontFamily) {
-    config.fontFamily = element.dataset.fontFamily;
+    let fontFamily = element.dataset.fontFamily;
+    // Resolve CSS variables - Canvas 2D context doesn't understand var(--name) syntax
+    if (fontFamily.startsWith("var(")) {
+      const varMatch = fontFamily.match(/var\(([^)]+)\)/);
+      if (varMatch) {
+        const varName = varMatch[1].trim();
+        const resolved = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+        if (resolved) {
+          fontFamily = resolved;
+          console.log(`[webterm:parseConfig] Resolved CSS variable ${varName} to: "${fontFamily}"`);
+        } else {
+          console.warn(`[webterm:parseConfig] CSS variable ${varName} not found, using default font`);
+          fontFamily = DEFAULT_FONT_FAMILY;
+        }
+      }
+    }
+    config.fontFamily = fontFamily;
     console.log(`[webterm:parseConfig] fontFamily: "${config.fontFamily}"`);
   }
   if (element.dataset.fontSize) {
