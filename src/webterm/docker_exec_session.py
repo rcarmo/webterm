@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import socket
 from collections import deque
 from dataclasses import dataclass
@@ -26,6 +27,10 @@ log = logging.getLogger("webterm")
 REPLAY_BUFFER_SIZE = 256 * 1024  # 256KB
 DEFAULT_SCREEN_WIDTH = 132
 DEFAULT_SCREEN_HEIGHT = 45
+
+# Pattern to filter out terminal device attribute responses that cause display issues
+# These are responses to queries that shouldn't be displayed as text
+DA_RESPONSE_PATTERN = re.compile(rb'\x1b\[\?[\d;]+c')
 
 
 @dataclass(frozen=True)
@@ -173,8 +178,8 @@ class DockerExecSession(Session):
             sock.close()
             detail = body.decode("utf-8", errors="replace")
             raise RuntimeError(f"Docker API exec start failed ({status}): {detail}")
-        if body:
-            self._pending_output += body
+        # Don't save body from HTTP upgrade - it contains protocol handshake data,
+        # not real terminal output (e.g., device attribute responses like "\x1b[?1;10;0c")
         sock.settimeout(None)
         return sock
 
@@ -297,6 +302,11 @@ class DockerExecSession(Session):
                 data = await queue.get()
                 if not data:
                     break
+                # Filter out device attribute responses that can cause display issues
+                # when split across socket reads
+                data = DA_RESPONSE_PATTERN.sub(b'', data)
+                if not data:
+                    continue
                 await self._add_to_replay_buffer(data)
                 await self._update_screen(data)
                 if self._connector:

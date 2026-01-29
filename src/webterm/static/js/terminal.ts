@@ -515,9 +515,12 @@ class WebTerminal {
     // Wait for fonts to load before fitting to ensure correct measurements
     this.waitForFonts().then(() => {
       console.log("[webterm:init] Fonts loaded, reapplying font family and fitting...");
-      this.terminal.options.fontFamily = this.fontFamily;
-      if (typeof (this.terminal as unknown as { loadFonts?: () => void }).loadFonts === "function") {
-        (this.terminal as unknown as { loadFonts: () => void }).loadFonts();
+      // Use renderer's setFontFamily method to properly update fonts
+      const renderer = (this.terminal as unknown as { renderer?: { setFontFamily: (family: string) => void; remeasureFont: () => void } }).renderer;
+      if (renderer) {
+        renderer.setFontFamily(this.fontFamily);
+        renderer.remeasureFont();
+        console.log("[webterm:init] Font family updated via renderer");
       }
       this.fit();
       console.log("[webterm:init] fit() completed");

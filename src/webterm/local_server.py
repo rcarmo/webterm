@@ -360,12 +360,19 @@ class LocalServer:
     def _on_docker_container_added(self, slug: str, name: str, command: str) -> None:
         """Callback when a Docker container is added."""
         log.info("Container added to dashboard: %s -> %s", name, slug)
+        # Update slug-to-service mapping for sparklines
+        if self._docker_stats:
+            self._slug_to_service[slug] = name
+            log.debug("Added sparkline mapping: %s -> %s", slug, name)
         # Notify SSE subscribers about dashboard change
         self._notify_activity("__dashboard__")
 
     def _on_docker_container_removed(self, slug: str) -> None:
         """Callback when a Docker container is removed."""
         log.info("Container removed from dashboard: %s", slug)
+        # Remove slug-to-service mapping
+        if self._docker_stats and slug in self._slug_to_service:
+            del self._slug_to_service[slug]
         # Invalidate any cached screenshots
         self._screenshot_cache.pop(slug, None)
         self._screenshot_cache_etag.pop(slug, None)
@@ -769,7 +776,7 @@ class LocalServer:
         .floating-results .search-query {{ font-size: 18px; font-weight: bold; color: #3b82f6; }}
         .floating-results .result-item {{ display: flex; align-items: center; gap: 12px; padding: 12px; margin: 6px 0; border: 1px solid #334155; border-radius: 6px; cursor: pointer; transition: all 0.15s; }}
         .floating-results .result-item:hover, .floating-results .result-item.active {{ background: #334155; border-color: #3b82f6; }}
-        .floating-results .result-thumb {{ width: 72px; height: 40px; flex: 0 0 auto; border-radius: 4px; border: 1px solid #334155; background: #0b1220; object-fit: contain; }}
+        .floating-results .result-thumb {{ width: 96px; height: 72px; flex: 0 0 auto; border-radius: 4px; border: 1px solid #334155; background: #0b1220; object-fit: contain; }}
         .floating-results .result-content {{ display: flex; flex-direction: column; gap: 2px; }}
         .floating-results .result-title {{ font-weight: bold; margin-bottom: 4px; }}
         .floating-results .result-meta {{ font-size: 12px; color: #94a3b8; }}
