@@ -33,13 +33,16 @@ DEFAULT_SCREEN_WIDTH = 132
 DEFAULT_SCREEN_HEIGHT = 45
 
 # Pattern to filter out terminal device attribute responses that cause display issues
-# These are responses to DA1/DA2 queries that shouldn't be displayed as text
-# Matches complete responses like \x1b[?1;10;0c or \x1b[?64;1;2;...c
-DA_RESPONSE_PATTERN = re.compile(rb"\x1b\[\?[\d;]+c")
+# These are responses to DA1/DA2/DA3 queries that shouldn't be displayed as text
+# Matches complete responses like:
+#   \x1b[?1;10;0c  (DA1 - Primary Device Attributes)
+#   \x1b[>1;10;0c  (DA2 - Secondary Device Attributes, sent by tmux)
+#   \x1b[=1;0c     (DA3 - Tertiary Device Attributes)
+DA_RESPONSE_PATTERN = re.compile(rb"\x1b\[[?>=][\d;]*c")
 
 # Pattern to detect partial DA responses at end of data (incomplete escape sequence)
-# Matches: \x1b, \x1b[, \x1b[?, \x1b[?1, \x1b[?1;, etc.
-DA_PARTIAL_PATTERN = re.compile(rb"\x1b(?:\[(?:\?[\d;]*)?)?$")
+# Matches: \x1b, \x1b[, \x1b[?, \x1b[>, \x1b[=, \x1b[?1, \x1b[>1;10, etc.
+DA_PARTIAL_PATTERN = re.compile(rb"\x1b(?:\[(?:[?>=][\d;]*)?)?$")
 
 
 class TerminalSession(Session):

@@ -27,10 +27,11 @@ from .session_manager import SessionManager
 from .svg_exporter import render_terminal_svg
 from .types import Meta, RouteKey, SessionID
 
-# Pattern to filter terminal device attribute responses (DA1/DA2) from replay buffer.
+# Pattern to filter terminal device attribute responses (DA1/DA2/DA3) from replay buffer.
 # These responses can appear as visible text like "1;10;0c" if split across reads.
+# Matches: \x1b[?...c (DA1), \x1b[>...c (DA2 from tmux), \x1b[=...c (DA3)
 # See docker_exec_session.py and terminal_session.py for main filtering.
-DA_RESPONSE_PATTERN = re.compile(rb"\x1b\[\?[\d;]+c")
+DA_RESPONSE_PATTERN = re.compile(rb"\x1b\[[?>=][\d;]*c")
 
 if TYPE_CHECKING:
     from .config import Config
