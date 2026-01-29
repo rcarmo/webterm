@@ -168,17 +168,11 @@ class TestTerminalSession:
         session = TerminalSession(mock_poller, "test-session", command)
 
         with (
-            patch(
-                "webterm.terminal_session.pty.fork", return_value=(pty.CHILD, 123)
-            ) as mock_fork,
+            patch("webterm.terminal_session.pty.fork", return_value=(pty.CHILD, 123)) as mock_fork,
             patch("webterm.terminal_session.version", return_value="0.0.0"),
             patch("webterm.terminal_session.shlex.split", wraps=shlex.split) as mock_split,
-            patch(
-                "webterm.terminal_session.os.execvp", side_effect=OSError()
-            ) as mock_execvp,
-            patch(
-                "webterm.terminal_session.os._exit", side_effect=SystemExit(1)
-            ) as mock_exit,
+            patch("webterm.terminal_session.os.execvp", side_effect=OSError()) as mock_execvp,
+            patch("webterm.terminal_session.os._exit", side_effect=SystemExit(1)) as mock_exit,
             pytest.raises(SystemExit),
         ):
             await session.open()
@@ -209,9 +203,7 @@ class TestTerminalSession:
         with (
             patch("webterm.terminal_session.pty.fork", return_value=(pty.CHILD, 123)),
             patch("webterm.terminal_session.shlex.split", side_effect=ValueError("bad")),
-            patch(
-                "webterm.terminal_session.os._exit", side_effect=SystemExit(1)
-            ) as mock_exit,
+            patch("webterm.terminal_session.os._exit", side_effect=SystemExit(1)) as mock_exit,
             pytest.raises(SystemExit),
         ):
             await session.open()

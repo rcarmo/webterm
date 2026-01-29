@@ -35,11 +35,11 @@ DEFAULT_SCREEN_HEIGHT = 45
 # Pattern to filter out terminal device attribute responses that cause display issues
 # These are responses to DA1/DA2 queries that shouldn't be displayed as text
 # Matches complete responses like \x1b[?1;10;0c or \x1b[?64;1;2;...c
-DA_RESPONSE_PATTERN = re.compile(rb'\x1b\[\?[\d;]+c')
+DA_RESPONSE_PATTERN = re.compile(rb"\x1b\[\?[\d;]+c")
 
 # Pattern to detect partial DA responses at end of data (incomplete escape sequence)
 # Matches: \x1b, \x1b[, \x1b[?, \x1b[?1, \x1b[?1;, etc.
-DA_PARTIAL_PATTERN = re.compile(rb'\x1b(?:\[(?:\?[\d;]*)?)?$')
+DA_PARTIAL_PATTERN = re.compile(rb"\x1b(?:\[(?:\?[\d;]*)?)?$")
 
 
 class TerminalSession(Session):
@@ -331,7 +331,7 @@ class TerminalSession(Session):
                     self._escape_buffer = b""
 
                 # Filter out complete DA1/DA2 responses (e.g., \x1b[?1;10;0c)
-                data = DA_RESPONSE_PATTERN.sub(b'', data)
+                data = DA_RESPONSE_PATTERN.sub(b"", data)
                 if not data:
                     continue
 
@@ -339,8 +339,8 @@ class TerminalSession(Session):
                 # Hold it back until we get more data to see if it completes
                 match = DA_PARTIAL_PATTERN.search(data)
                 if match:
-                    self._escape_buffer = data[match.start():]
-                    data = data[:match.start()]
+                    self._escape_buffer = data[match.start() :]
+                    data = data[: match.start()]
                     if not data:
                         continue
 

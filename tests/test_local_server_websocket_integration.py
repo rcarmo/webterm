@@ -16,6 +16,7 @@ from webterm.types import RouteKey, SessionID
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+
 async def _make_client(server: LocalServer) -> TestClient:
     app = web.Application()
     app.add_routes(server._build_routes())

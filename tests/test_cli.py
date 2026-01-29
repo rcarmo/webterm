@@ -40,6 +40,7 @@ class TestCLI:
 
     def test_cli_runs_default_shell(self, monkeypatch):
         import os
+
         calls: dict[str, object] = {}
 
         class FakeServer:

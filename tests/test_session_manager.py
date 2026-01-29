@@ -215,6 +215,7 @@ class TestSessionManager:
             assert result is not None
             assert isinstance(result, DockerExecSession)
 
+
 class TestSessionManagerRoutes:
     """Tests for SessionManager route handling."""
 

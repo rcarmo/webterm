@@ -7,7 +7,6 @@ from webterm import cli
 
 
 def test_cli_landing_manifest_runs(monkeypatch, tmp_path: Path):
-
     manifest = tmp_path / "landing.yaml"
     manifest.write_text(
         """
@@ -40,7 +39,6 @@ def test_cli_landing_manifest_runs(monkeypatch, tmp_path: Path):
 
 
 def test_cli_compose_manifest_runs(monkeypatch, tmp_path: Path):
-
     manifest = tmp_path / "compose.yaml"
     manifest.write_text(
         """

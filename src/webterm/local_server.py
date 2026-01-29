@@ -7,6 +7,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import re
 import signal
 import time
 from pathlib import Path
@@ -25,6 +26,11 @@ from .session import SessionConnector
 from .session_manager import SessionManager
 from .svg_exporter import render_terminal_svg
 from .types import Meta, RouteKey, SessionID
+
+# Pattern to filter terminal device attribute responses (DA1/DA2) from replay buffer.
+# These responses can appear as visible text like "1;10;0c" if split across reads.
+# See docker_exec_session.py and terminal_session.py for main filtering.
+DA_RESPONSE_PATTERN = re.compile(rb"\x1b\[\?[\d;]+c")
 
 if TYPE_CHECKING:
     from .config import Config
@@ -324,10 +330,20 @@ class LocalServer:
                 self._docker_stats = DockerStatsCollector(compose_project=self._compose_project)
                 if self._docker_stats.available:
                     # Pass service names (not slugs) for Docker matching
-                    service_names = [app.name for app in (self._landing_apps if self._compose_mode else self.session_manager.apps)]
+                    service_names = [
+                        app.name
+                        for app in (
+                            self._landing_apps if self._compose_mode else self.session_manager.apps
+                        )
+                    ]
                     self._docker_stats.start(service_names)
                     # Create slug->name mapping for lookups
-                    self._slug_to_service = {app.slug: app.name for app in (self._landing_apps if self._compose_mode else self.session_manager.apps)}
+                    self._slug_to_service = {
+                        app.slug: app.name
+                        for app in (
+                            self._landing_apps if self._compose_mode else self.session_manager.apps
+                        )
+                    }
                     log.info("Slug to service mapping: %s", self._slug_to_service)
                     stack.push_async_callback(self._docker_stats.stop)
 
@@ -458,7 +474,11 @@ class LocalServer:
         if session_created and session is not None and hasattr(session, "get_replay_buffer"):
             replay = await session.get_replay_buffer()
             if replay:
-                await ws.send_bytes(replay)
+                # Filter out any DA1/DA2 responses that may have been captured
+                # in the replay buffer before filtering was added to session classes
+                replay = DA_RESPONSE_PATTERN.sub(b"", replay)
+                if replay:
+                    await ws.send_bytes(replay)
 
         try:
             async for msg in ws:
