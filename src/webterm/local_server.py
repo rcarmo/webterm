@@ -1347,6 +1347,16 @@ class LocalServer:
 
         document.addEventListener('keydown', handleKeydown);
 
+        // Ensure dashboard regains focus when the tab becomes active
+        window.addEventListener('focus', () => {{
+            window.focus();
+        }});
+        document.addEventListener('visibilitychange', () => {{
+            if (!document.hidden) {{
+                window.focus();
+            }}
+        }});
+
         // Refresh a single tile's screenshot
         function refreshTile(slug) {{
             const card = cardsBySlug[slug];
