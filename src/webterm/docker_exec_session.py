@@ -247,8 +247,12 @@ class DockerExecSession(Session):
                 self._stream.feed(text)
                 if self._screen.dirty:
                     self._change_counter += 1
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "Docker exec screen update failed (%s): %s",
+                    type(exc).__name__,
+                    exc,
+                )
 
     async def _drain_pending_output(self) -> None:
         if not self._pending_output:

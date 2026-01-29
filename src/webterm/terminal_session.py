@@ -189,9 +189,13 @@ class TerminalSession(Session):
                 # Increment change counter when screen is modified
                 if self._screen.dirty:
                     self._change_counter += 1
-            except Exception:
+            except Exception as exc:
                 # Don't let pyte errors crash the session
-                pass
+                log.warning(
+                    "Terminal screen update failed (%s): %s",
+                    type(exc).__name__,
+                    exc,
+                )
 
     async def get_replay_buffer(self) -> bytes:
         """Get the contents of the replay buffer."""
