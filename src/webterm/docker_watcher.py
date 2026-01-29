@@ -149,14 +149,14 @@ class DockerWatcher:
     def _get_container_command(self, container: dict) -> str:
         """Get command for container from label.
 
-        If label is 'auto', returns default exec command.
+        If label is 'auto', empty, or missing, returns default exec command.
         """
         labels = container.get("Labels", {})
         label_value = labels.get(LABEL_NAME)
 
         if _is_auto_label(label_value):
             return AUTO_COMMAND_SENTINEL
-        return label_value
+        return label_value or AUTO_COMMAND_SENTINEL
 
     def _get_container_theme(self, container: dict) -> str | None:
         labels = container.get("Labels", {})
