@@ -1132,8 +1132,7 @@ class LocalServer:
             card.appendChild(body);
             card.appendChild(meta);
             card.onclick = () => {{
-                // Use tile slug as window name to reuse the same tab for each tile
-                window.open(`/?route_key=${{encodeURIComponent(tile.slug)}}`, `webterm-${{tile.slug}}`);
+                openTile(tile);
             }};
             card.img = img;
             return card;
@@ -1165,7 +1164,14 @@ class LocalServer:
         // Typeahead search functions
         function openTile(tile) {{
             if (!tile || !tile.slug) return;
-            window.open(`/?route_key=${{encodeURIComponent(tile.slug)}}`, `webterm-${{tile.slug}}`);
+            const url = `/?route_key=${{encodeURIComponent(tile.slug)}}`;
+            const target = `webterm-${{tile.slug}}`;
+            const win = window.open(url, target);
+            if (win && typeof win.focus === 'function') {{
+                win.focus();
+            }} else {{
+                window.location.href = url;
+            }}
             // Dismiss typeahead after launching from floating results.
             searchQuery = '';
             activeResultIndex = -1;
