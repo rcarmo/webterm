@@ -221,6 +221,7 @@ class TestDockerWatcherIntegration:
     async def test_handle_event_without_label(self, session_manager):
         """Test that events without our label are ignored."""
         watcher = DockerWatcher(session_manager)
+        watcher._docker_request = AsyncMock(return_value=(404, ""))
 
         event = {
             "Action": "start",
@@ -234,6 +235,33 @@ class TestDockerWatcherIntegration:
 
         # Should not add container
         session_manager.add_app.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handle_start_event_label_added_after_start(self, session_manager):
+        """Container that gains label after start is picked up."""
+        watcher = DockerWatcher(session_manager)
+
+        async def mock_request(method, path):
+            if "/containers/" in path and "/json" in path:
+                return (
+                    200,
+                    '{"Name": "/test-service", "Config": {"Labels": {"webterm-command": "auto"}}}',
+                )
+            return 404, ""
+
+        watcher._docker_request = mock_request
+
+        event = {
+            "Action": "start",
+            "Actor": {
+                "ID": "container123",
+                "Attributes": {},  # Labels not present on event
+            },
+        }
+
+        await watcher._handle_event(event)
+
+        session_manager.add_app.assert_called_once()
 
 
 @pytest.mark.parametrize(

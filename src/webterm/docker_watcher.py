@@ -281,10 +281,6 @@ class DockerWatcher:
         container_id = actor.get("ID", "")
         attributes = actor.get("Attributes", {})
 
-        # Only handle containers with any webterm label
-        if not _has_webterm_label(attributes):
-            return
-
         if action == "start":
             # Get full container info
             status, body = await self._docker_request("GET", f"/containers/{container_id}/json")
@@ -296,7 +292,8 @@ class DockerWatcher:
                     "Names": ["/" + container_info.get("Name", "").lstrip("/")],
                     "Labels": container_info.get("Config", {}).get("Labels", {}),
                 }
-                await self._add_container(container)
+                if _has_webterm_label(container.get("Labels", {})):
+                    await self._add_container(container)
         elif action == "die":
             await self._remove_container(container_id)
 
