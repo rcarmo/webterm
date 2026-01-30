@@ -856,12 +856,8 @@ class LocalServer:
                 if cached_response is not None:
                     return cached_response
 
-            theme_name = None
             app = self.session_manager.apps_by_slug.get(route_key)
-            if app is not None and app.theme:
-                theme_name = app.theme.lower()
-            else:
-                theme_name = self.theme.lower()
+            theme_name = app.theme.lower() if app is not None and app.theme else self.theme.lower()
 
             palette = THEME_PALETTES.get(theme_name)
             if palette is None:

@@ -330,11 +330,14 @@ class TestHandleEventWithThemeLabel:
         async def mock_request(method, path):
             if "/containers/" in path and "/json" in path:
                 import json
-                return 200, json.dumps({
-                    "Id": "abc123",
-                    "Name": "/themed-container",
-                    "Config": {"Labels": {THEME_LABEL: "monokai"}},
-                })
+
+                return 200, json.dumps(
+                    {
+                        "Id": "abc123",
+                        "Name": "/themed-container",
+                        "Config": {"Labels": {THEME_LABEL: "monokai"}},
+                    }
+                )
             return 404, ""
 
         watcher._docker_request = mock_request

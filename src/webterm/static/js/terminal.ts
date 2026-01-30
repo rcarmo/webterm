@@ -651,20 +651,40 @@ class WebTerminal {
 
     // Handle special keys via beforeinput to intercept before browser modifies textarea
     textarea.addEventListener("beforeinput", (e) => {
+      if (e.inputType === "insertText" && e.data && (this.ctrlActive || this.shiftActive)) {
+        let toSend = e.data;
+        if (this.shiftActive && toSend.length === 1) {
+          toSend = toSend.toUpperCase();
+        }
+        if (this.ctrlActive && toSend.length === 1) {
+          const code = toSend.toUpperCase().charCodeAt(0);
+          if (code >= 65 && code <= 90) {
+            toSend = String.fromCharCode(code - 64);
+          }
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        this.send(["stdin", toSend]);
+        textarea.value = "";
+        this.deactivateModifiers();
+        return;
+      }
+
       let seq: string | null = null;
       switch (e.inputType) {
-        case "insertLineBreak":  // Enter key
+        case "insertLineBreak": // Enter key
           seq = "\r";
           break;
-        case "deleteContentBackward":  // Backspace
+        case "deleteContentBackward": // Backspace
           seq = "\x7f";
           break;
-        case "deleteContentForward":  // Delete
+        case "deleteContentForward": // Delete
           seq = "\x1b[3~";
           break;
       }
       if (seq) {
         e.preventDefault();
+        e.stopPropagation();
         this.send(["stdin", seq]);
         // Clear modifiers after sending special keys from soft keyboard
         this.deactivateModifiers();
@@ -704,6 +724,7 @@ class WebTerminal {
         const code = e.key.toUpperCase().charCodeAt(0);
         if (code >= 65 && code <= 90) {
           e.preventDefault();
+          e.stopPropagation();
           this.send(["stdin", String.fromCharCode(code - 64)]); // Ctrl+A=0x01, Ctrl+C=0x03, etc.
           this.deactivateModifiers(); // Clear modifiers after physical Ctrl+letter
           return;
@@ -742,6 +763,7 @@ class WebTerminal {
       }
       if (seq) {
         e.preventDefault();
+        e.stopPropagation();
         this.send(["stdin", seq]);
         // Always clear modifiers after any key
         this.deactivateModifiers();
@@ -749,7 +771,9 @@ class WebTerminal {
     });
 
     // Apply keybar modifiers to physical keyboard input even when the textarea isn't focused.
-    document.addEventListener("keydown", (event) => {
+    document.addEventListener(
+      "keydown",
+      (event) => {
       if (!this.ctrlActive && !this.shiftActive) {
         return;
       }
@@ -773,6 +797,7 @@ class WebTerminal {
           }
         }
         event.preventDefault();
+        event.stopPropagation();
         this.send(["stdin", toSend]);
         handled = true;
       } else {
@@ -815,6 +840,7 @@ class WebTerminal {
 
         if (seq) {
           event.preventDefault();
+          event.stopPropagation();
           this.send(["stdin", seq]);
           handled = true;
         }
@@ -823,7 +849,9 @@ class WebTerminal {
       if (handled) {
         this.deactivateModifiers();
       }
-    });
+      },
+      { capture: true }
+    );
 
     // Focus textarea on touch/click to show mobile keyboard
     // iOS requires focus() to be called synchronously within the gesture

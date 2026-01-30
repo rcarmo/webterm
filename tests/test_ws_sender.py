@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from webterm.config import Config
-from webterm.local_server import LocalServer, WS_SEND_TIMEOUT
+from webterm.local_server import WS_SEND_TIMEOUT, LocalServer
 
 
 @pytest.mark.asyncio

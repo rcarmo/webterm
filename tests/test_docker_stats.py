@@ -1,12 +1,14 @@
 """Tests for docker_stats module."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from webterm.docker_stats import (
+    DEFAULT_DOCKER_SOCKET,
     STATS_HISTORY_SIZE,
     DockerStatsCollector,
+    get_docker_socket_path,
     render_sparkline_svg,
 )
 
@@ -92,6 +94,16 @@ class TestDockerStatsCollector:
         socket_path.touch()
         assert collector.available is False  # File exists but can't connect
 
+    def test_get_docker_socket_path_env(self, monkeypatch):
+        monkeypatch.setenv("DOCKER_HOST", "unix:///tmp/custom.sock")
+        assert get_docker_socket_path() == "/tmp/custom.sock"
+
+        monkeypatch.setenv("DOCKER_HOST", "/tmp/alt.sock")
+        assert get_docker_socket_path() == "/tmp/alt.sock"
+
+        monkeypatch.setenv("DOCKER_HOST", "tcp://127.0.0.1:2375")
+        assert get_docker_socket_path() == DEFAULT_DOCKER_SOCKET
+
     def test_get_cpu_history_empty(self):
         """Empty history returns empty list."""
         collector = DockerStatsCollector("/nonexistent")
@@ -135,6 +147,22 @@ class TestDockerStatsCollector:
         result = collector._calculate_cpu_percent("test", cpu_stats, precpu_stats)
         assert result is None
 
+    def test_calculate_cpu_percent_uses_previous_stats(self):
+        collector = DockerStatsCollector("/nonexistent")
+        collector._prev_cpu["svc"] = (1000, 2000)
+        cpu_stats = {
+            "cpu_usage": {"total_usage": 2000},
+            "system_cpu_usage": 4000,
+            "online_cpus": 2,
+        }
+        precpu_stats = {
+            "cpu_usage": {"total_usage": 0},
+            "system_cpu_usage": 0,
+        }
+
+        result = collector._calculate_cpu_percent("svc", cpu_stats, precpu_stats)
+        assert result == 100.0
+
     def test_start_without_socket(self, tmp_path):
         """Start does nothing if socket not available."""
         collector = DockerStatsCollector(str(tmp_path / "nonexistent.sock"))
@@ -155,6 +183,61 @@ class TestDockerStatsCollector:
         result = await collector._make_request("/test")
         assert result is None
 
+    def test_parse_docker_response_parses_json(self):
+        collector = DockerStatsCollector("/nonexistent")
+        response = b'HTTP/1.0 200 OK\r\n\r\n{"ok": true}'
+        assert collector._parse_docker_response("/stats", response) == {"ok": True}
+
+    def test_parse_docker_response_filters_non_200(self):
+        collector = DockerStatsCollector("/nonexistent")
+        response = b'HTTP/1.0 404 Not Found\r\n\r\n{"ok": true}'
+        assert collector._parse_docker_response("/stats", response) is None
+
+    def test_parse_docker_response_finds_json_in_body(self):
+        collector = DockerStatsCollector("/nonexistent")
+        response = b'HTTP/1.0 200 OK\r\n\r\njunk\r\n{"ok": true}\r\n'
+        assert collector._parse_docker_response("/stats", response) == {"ok": True}
+
+    def test_parse_docker_response_invalid_json(self):
+        collector = DockerStatsCollector("/nonexistent")
+        response = b"HTTP/1.0 200 OK\r\n\r\n{bad json"
+        assert collector._parse_docker_response("/stats", response) is None
+
+    @pytest.mark.asyncio
+    async def test_discover_containers_maps_compose_services(self):
+        collector = DockerStatsCollector("/nonexistent", compose_project="demo")
+        collector._make_request = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                {
+                    "Id": "abcdef1234567890",
+                    "Names": ["/demo_web_1"],
+                    "Labels": {
+                        "com.docker.compose.project": "demo",
+                        "com.docker.compose.service": "web",
+                    },
+                }
+            ]
+        )
+
+        mapping = await collector._discover_containers(["web"])
+        assert mapping == {"web": "abcdef123456"}
+
+    @pytest.mark.asyncio
+    async def test_discover_containers_falls_back_to_name(self):
+        collector = DockerStatsCollector("/nonexistent")
+        collector._make_request = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                {
+                    "Id": "1234567890abcdef",
+                    "Names": ["/api"],
+                    "Labels": {},
+                }
+            ]
+        )
+
+        mapping = await collector._discover_containers(["api"])
+        assert mapping == {"api": "1234567890ab"}
+
     def test_cpu_history_max_size(self):
         """CPU history respects max size."""
         from collections import deque
@@ -167,6 +250,27 @@ class TestDockerStatsCollector:
             collector._cpu_history["test"].append(float(i))
 
         assert len(collector._cpu_history["test"]) == STATS_HISTORY_SIZE
+
+    @pytest.mark.asyncio
+    async def test_poll_container_appends_history(self):
+        collector = DockerStatsCollector("/nonexistent")
+        collector._make_request = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "cpu_stats": {"system_cpu_usage": 4000, "cpu_usage": {"total_usage": 2000}},
+                "precpu_stats": {
+                    "system_cpu_usage": 2000,
+                    "cpu_usage": {"total_usage": 1000},
+                },
+            }
+        )
+        with patch.object(
+            collector,
+            "_calculate_cpu_percent",
+            return_value=12.5,
+        ):
+            await collector._poll_container("svc", "container")
+
+        assert collector.get_cpu_history("svc") == [12.5]
 
     def test_add_service_dynamic(self):
         """Services can be added dynamically after start."""

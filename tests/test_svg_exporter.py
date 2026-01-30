@@ -57,27 +57,36 @@ class TestColorToHex:
 
     def test_color_to_hex_uses_palette_defaults(self) -> None:
         palette = {"red": "#123456"}
-        assert _color_to_hex(
-            "default",
-            is_foreground=True,
-            palette=palette,
-            default_fg="#111111",
-            default_bg="#222222",
-        ) == "#111111"
-        assert _color_to_hex(
-            "default",
-            is_foreground=False,
-            palette=palette,
-            default_fg="#111111",
-            default_bg="#222222",
-        ) == "#222222"
-        assert _color_to_hex(
-            "red",
-            is_foreground=True,
-            palette=palette,
-            default_fg="#111111",
-            default_bg="#222222",
-        ) == "#123456"
+        assert (
+            _color_to_hex(
+                "default",
+                is_foreground=True,
+                palette=palette,
+                default_fg="#111111",
+                default_bg="#222222",
+            )
+            == "#111111"
+        )
+        assert (
+            _color_to_hex(
+                "default",
+                is_foreground=False,
+                palette=palette,
+                default_fg="#111111",
+                default_bg="#222222",
+            )
+            == "#222222"
+        )
+        assert (
+            _color_to_hex(
+                "red",
+                is_foreground=True,
+                palette=palette,
+                default_fg="#111111",
+                default_bg="#222222",
+            )
+            == "#123456"
+        )
 
 
 class TestEscapeXml:

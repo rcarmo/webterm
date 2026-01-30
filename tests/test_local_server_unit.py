@@ -1,8 +1,8 @@
 """Tests for local_server module - unit tests for helper functions."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
-import asyncio
 import pytest
 from aiohttp import web
 
