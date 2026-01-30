@@ -602,16 +602,29 @@ class WebTerminal {
     // Connect WebSocket
     this.connect();
 
+    const restoreFocus = () => {
+      if (isMobileDevice()) {
+        this.focusMobileInput();
+      } else {
+        this.terminal.focus();
+      }
+    };
+
     // Focus terminal when returning to the tab
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
-        this.terminal.focus();
+        restoreFocus();
       }
     });
 
     // Restore focus when browser window regains focus
     window.addEventListener("focus", () => {
-      this.terminal.focus();
+      restoreFocus();
+    });
+
+    // Safari can restore tabs via bfcache without a focus event.
+    window.addEventListener("pageshow", () => {
+      restoreFocus();
     });
   }
 
