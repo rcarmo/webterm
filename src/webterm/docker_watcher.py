@@ -279,8 +279,6 @@ class DockerWatcher:
         action = event.get("Action", "")
         actor = event.get("Actor", {})
         container_id = actor.get("ID", "")
-        attributes = actor.get("Attributes", {})
-
         if action == "start":
             # Get full container info
             status, body = await self._docker_request("GET", f"/containers/{container_id}/json")

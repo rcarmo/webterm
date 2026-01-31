@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import pyte
 from importlib_metadata import PackageNotFoundError, version
 
+from .alt_screen import AltScreen
 from .session import Session, SessionConnector
 
 if TYPE_CHECKING:
@@ -63,8 +64,8 @@ class TerminalSession(Session):
         self._replay_buffer: deque[bytes] = deque()
         self._replay_buffer_size = 0
         self._replay_lock = asyncio.Lock()
-        # pyte screen for accurate terminal state tracking
-        self._screen = pyte.Screen(DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT)
+        # pyte screen for accurate terminal state tracking (AltScreen for alternate buffer support)
+        self._screen = AltScreen(DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT)
         self._stream = pyte.Stream(self._screen)
         self._screen_lock = asyncio.Lock()
         # Track last known terminal size for reconnection
@@ -94,7 +95,7 @@ class TerminalSession(Session):
         self._last_height = height
         # Initialize pyte screen with the requested size (under lock to prevent races)
         async with self._screen_lock:
-            self._screen = pyte.Screen(width, height)
+            self._screen = AltScreen(width, height)
             self._stream = pyte.Stream(self._screen)
 
         pid, master_fd = pty.fork()

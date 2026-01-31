@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import pyte
 
+from .alt_screen import AltScreen
 from .docker_stats import get_docker_socket_path
 from .session import Session, SessionConnector
 
@@ -70,7 +71,7 @@ class DockerExecSession(Session):
         self._replay_buffer: deque[bytes] = deque()
         self._replay_buffer_size = 0
         self._replay_lock = asyncio.Lock()
-        self._screen = pyte.Screen(DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT)
+        self._screen = AltScreen(DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT)
         self._stream = pyte.Stream(self._screen)
         self._screen_lock = asyncio.Lock()
         self._last_width = DEFAULT_SCREEN_WIDTH
@@ -218,7 +219,7 @@ class DockerExecSession(Session):
         self._last_width = width
         self._last_height = height
         async with self._screen_lock:
-            self._screen = pyte.Screen(width, height)
+            self._screen = AltScreen(width, height)
             self._stream = pyte.Stream(self._screen)
         exec_id = await asyncio.to_thread(self._create_exec)
         self._exec_id = exec_id
