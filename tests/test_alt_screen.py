@@ -1,8 +1,9 @@
 """Tests for the AltScreen class with alternate screen buffer support."""
 
 import pyte
+import pytest
 
-from webterm.alt_screen import DECALTBUF, AltScreen
+from webterm.alt_screen import DECALTBUF, DECALTBUF_1047, DECALTBUF_1048, AltScreen
 
 
 class TestAltScreen:
@@ -58,6 +59,32 @@ class TestAltScreen:
 
         stream.feed("\x1b[?1049l")
         assert DECALTBUF not in screen.mode
+
+    @pytest.mark.parametrize(
+        ("enter_seq", "exit_seq", "mode_flag"),
+        [
+            ("\x1b[?1047h", "\x1b[?1047l", DECALTBUF_1047),
+            ("\x1b[?1048h", "\x1b[?1048l", DECALTBUF_1048),
+        ],
+    )
+    def test_alternate_screen_mode_variants(self, enter_seq, exit_seq, mode_flag):
+        """Test that DECSET/DECRST 1047/1048 trigger alternate buffer handling."""
+        screen = AltScreen(40, 10)
+        stream = pyte.Stream(screen)
+
+        stream.feed("MAIN SCREEN\r\n")
+        assert "MAIN SCREEN" in screen.display[0]
+
+        stream.feed(enter_seq)
+        assert mode_flag in screen.mode
+        assert screen.display[0].strip() == ""
+
+        stream.feed("ALT BUFFER\r\n")
+        assert "ALT BUFFER" in screen.display[0]
+
+        stream.feed(exit_seq)
+        assert mode_flag not in screen.mode
+        assert "MAIN SCREEN" in screen.display[0]
 
     def test_multiple_alt_screen_switches(self):
         """Test multiple switches between main and alternate screen."""

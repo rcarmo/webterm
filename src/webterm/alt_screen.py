@@ -19,8 +19,10 @@ import pyte
 if TYPE_CHECKING:
     from pyte.screens import Char
 
-# Private mode 1049 (alternate screen buffer) - shifted by 5 as per pyte's convention
+# Private mode alternate screen buffers (1047/1048/1049) - shifted by 5 per pyte's convention
 DECALTBUF = 1049 << 5
+DECALTBUF_1047 = 1047 << 5
+DECALTBUF_1048 = 1048 << 5
 
 
 class AltScreen(pyte.Screen):
@@ -74,10 +76,20 @@ class AltScreen(pyte.Screen):
         # Mark all lines as dirty for re-render
         self.dirty.update(range(self.lines))
 
+    def _is_alt_buffer_mode(self, modes: tuple[int, ...]) -> bool:
+        return 1047 in modes or 1048 in modes or 1049 in modes
+
+    def _has_alt_buffer_enabled(self) -> bool:
+        return (
+            DECALTBUF in self.mode
+            or DECALTBUF_1047 in self.mode
+            or DECALTBUF_1048 in self.mode
+        )
+
     def set_mode(self, *modes: int, **kwargs: Any) -> None:
         """Set (enable) modes, with special handling for alternate screen buffer."""
-        # Check if we're entering alternate screen mode (private mode 1049)
-        if kwargs.get("private") and 1049 in modes and DECALTBUF not in self.mode:
+        # Check if we're entering alternate screen mode (private mode 1047/1048/1049)
+        if kwargs.get("private") and self._is_alt_buffer_mode(modes) and not self._has_alt_buffer_enabled():
             # Save main screen before switching
             self._save_main_screen()
             # Clear screen for alternate buffer
@@ -89,8 +101,8 @@ class AltScreen(pyte.Screen):
 
     def reset_mode(self, *modes: int, **kwargs: Any) -> None:
         """Reset (disable) modes, with special handling for alternate screen buffer."""
-        # Check if we're leaving alternate screen mode (private mode 1049)
-        if kwargs.get("private") and 1049 in modes and DECALTBUF in self.mode:
+        # Check if we're leaving alternate screen mode (private mode 1047/1048/1049)
+        if kwargs.get("private") and self._is_alt_buffer_mode(modes) and self._has_alt_buffer_enabled():
             # Will be removed by parent, restore main screen after
             super().reset_mode(*modes, **kwargs)
             self._restore_main_screen()
