@@ -45,6 +45,37 @@ DA_RESPONSE_PATTERN = re.compile(rb"\x1b\[[?>=][\d;]*c")
 # Matches: \x1b, \x1b[, \x1b[?, \x1b[>, \x1b[=, \x1b[?1, \x1b[>1;10, etc.
 DA_PARTIAL_PATTERN = re.compile(rb"\x1b(?:\[(?:[?>=][\d;]*)?)?$")
 
+# Map C1 control sequences to 7-bit ESC equivalents for pyte compatibility
+CSI_C1 = b"\x9b"
+OSC_C1 = b"\x9d"
+ST_C1 = b"\x9c"
+DCS_C1 = b"\x90"
+SOS_C1 = b"\x98"
+PM_C1 = b"\x9e"
+APC_C1 = b"\x9f"
+
+
+def _normalize_c1_controls(data: bytes) -> bytes:
+    if (
+        CSI_C1 not in data
+        and OSC_C1 not in data
+        and ST_C1 not in data
+        and DCS_C1 not in data
+        and SOS_C1 not in data
+        and PM_C1 not in data
+        and APC_C1 not in data
+    ):
+        return data
+    return (
+        data.replace(CSI_C1, b"\x1b[")
+        .replace(OSC_C1, b"\x1b]")
+        .replace(ST_C1, b"\x1b\\")
+        .replace(DCS_C1, b"\x1bP")
+        .replace(SOS_C1, b"\x1bX")
+        .replace(PM_C1, b"\x1b^")
+        .replace(APC_C1, b"\x1b_")
+    )
+
 
 class TerminalSession(Session):
     """A session that manages a terminal."""
@@ -66,7 +97,7 @@ class TerminalSession(Session):
         self._replay_lock = asyncio.Lock()
         # pyte screen for accurate terminal state tracking (AltScreen for alternate buffer support)
         self._screen = AltScreen(DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT)
-        self._stream = pyte.Stream(self._screen)
+        self._stream = pyte.ByteStream(self._screen)
         self._screen_lock = asyncio.Lock()
         # Track last known terminal size for reconnection
         self._last_width = DEFAULT_SCREEN_WIDTH
@@ -96,7 +127,7 @@ class TerminalSession(Session):
         # Initialize pyte screen with the requested size (under lock to prevent races)
         async with self._screen_lock:
             self._screen = AltScreen(width, height)
-            self._stream = pyte.Stream(self._screen)
+            self._stream = pyte.ByteStream(self._screen)
 
         pid, master_fd = pty.fork()
         self.pid = pid
@@ -188,8 +219,7 @@ class TerminalSession(Session):
         """Update the pyte screen with new terminal data."""
         async with self._screen_lock:
             try:
-                text = data.decode("utf-8", errors="replace")
-                self._stream.feed(text)
+                self._stream.feed(_normalize_c1_controls(data))
                 # Increment change counter when screen is modified
                 if self._screen.dirty:
                     self._change_counter += 1

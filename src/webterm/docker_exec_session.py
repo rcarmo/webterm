@@ -42,6 +42,37 @@ DA_RESPONSE_PATTERN = re.compile(rb"\x1b\[[?>=][\d;]*c")
 # These need to be held back until more data arrives to see if they complete
 DA_PARTIAL_PATTERN = re.compile(rb"\x1b(?:\[(?:[?>=][\d;]*)?)?$")
 
+# Map C1 control sequences to 7-bit ESC equivalents for pyte compatibility
+CSI_C1 = b"\x9b"
+OSC_C1 = b"\x9d"
+ST_C1 = b"\x9c"
+DCS_C1 = b"\x90"
+SOS_C1 = b"\x98"
+PM_C1 = b"\x9e"
+APC_C1 = b"\x9f"
+
+
+def _normalize_c1_controls(data: bytes) -> bytes:
+    if (
+        CSI_C1 not in data
+        and OSC_C1 not in data
+        and ST_C1 not in data
+        and DCS_C1 not in data
+        and SOS_C1 not in data
+        and PM_C1 not in data
+        and APC_C1 not in data
+    ):
+        return data
+    return (
+        data.replace(CSI_C1, b"\x1b[")
+        .replace(OSC_C1, b"\x1b]")
+        .replace(ST_C1, b"\x1b\\")
+        .replace(DCS_C1, b"\x1bP")
+        .replace(SOS_C1, b"\x1bX")
+        .replace(PM_C1, b"\x1b^")
+        .replace(APC_C1, b"\x1b_")
+    )
+
 
 @dataclass(frozen=True)
 class DockerExecSpec:
@@ -72,7 +103,7 @@ class DockerExecSession(Session):
         self._replay_buffer_size = 0
         self._replay_lock = asyncio.Lock()
         self._screen = AltScreen(DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT)
-        self._stream = pyte.Stream(self._screen)
+        self._stream = pyte.ByteStream(self._screen)
         self._screen_lock = asyncio.Lock()
         self._last_width = DEFAULT_SCREEN_WIDTH
         self._last_height = DEFAULT_SCREEN_HEIGHT
@@ -220,7 +251,7 @@ class DockerExecSession(Session):
         self._last_height = height
         async with self._screen_lock:
             self._screen = AltScreen(width, height)
-            self._stream = pyte.Stream(self._screen)
+            self._stream = pyte.ByteStream(self._screen)
         exec_id = await asyncio.to_thread(self._create_exec)
         self._exec_id = exec_id
         self._sock = await asyncio.to_thread(self._start_exec_socket, exec_id)
@@ -250,8 +281,7 @@ class DockerExecSession(Session):
     async def _update_screen(self, data: bytes) -> None:
         async with self._screen_lock:
             try:
-                text = data.decode("utf-8", errors="replace")
-                self._stream.feed(text)
+                self._stream.feed(_normalize_c1_controls(data))
                 if self._screen.dirty:
                     self._change_counter += 1
             except Exception as exc:

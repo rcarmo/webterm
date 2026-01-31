@@ -105,6 +105,19 @@ class TestTerminalSession:
         assert lines[2] == "Line 3"
 
     @pytest.mark.asyncio
+    async def test_screen_handles_c1_csi_sequences(self, terminal_session):
+        """Ensure C1 CSI (0x9b) sequences are parsed for clearing lines."""
+        await terminal_session._update_screen(b"Line 1\r\nLine 2\r\nLine 3\r\n")
+        # C1 CSI equivalent of ESC[2;1H ESC[K
+        await terminal_session._update_screen(b"\x9b2;1H\x9bKUpdated Line 2")
+
+        lines = await terminal_session.get_screen_lines()
+
+        assert lines[0] == "Line 1"
+        assert lines[1] == "Updated Line 2"
+        assert lines[2] == "Line 3"
+
+    @pytest.mark.asyncio
     async def test_get_screen_state_returns_dirty_flag(self, terminal_session):
         """Test that get_screen_state returns has_changes flag based on pyte dirty tracking."""
         # After creation, all rows are dirty (initialized)
