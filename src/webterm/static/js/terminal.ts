@@ -676,32 +676,41 @@ class WebTerminal {
     this.element.appendChild(textarea);
     this.mobileInput = textarea;
 
+    const applyMobileModifiers = (text: string): string => {
+      let toSend = text;
+      if ((this.shiftActive || this.pendingShift) && toSend.length === 1) {
+        toSend = toSend.toUpperCase();
+      }
+      if ((this.ctrlActive || this.pendingCtrl) && toSend.length === 1) {
+        const code = toSend.toUpperCase().charCodeAt(0);
+        if (code >= 65 && code <= 90) {
+          toSend = String.fromCharCode(code - 64);
+        }
+      }
+      return toSend;
+    };
+
+    const handleMobileInput = (text: string, e?: Event) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (!text) {
+        return;
+      }
+      this.send(["stdin", applyMobileModifiers(text)]);
+      textarea.value = "";
+      this.deactivateModifiers();
+      this.pendingCtrl = false;
+      this.pendingShift = false;
+    };
+
     // Handle special keys via beforeinput to intercept before browser modifies textarea
     textarea.addEventListener("beforeinput", (e) => {
-        if (
-          e.inputType === "insertText"
-          && e.data
-          && (this.ctrlActive || this.shiftActive || this.pendingCtrl || this.pendingShift)
-        ) {
-          let toSend = e.data;
-          if ((this.shiftActive || this.pendingShift) && toSend.length === 1) {
-            toSend = toSend.toUpperCase();
-          }
-          if ((this.ctrlActive || this.pendingCtrl) && toSend.length === 1) {
-            const code = toSend.toUpperCase().charCodeAt(0);
-            if (code >= 65 && code <= 90) {
-              toSend = String.fromCharCode(code - 64);
-            }
-          }
-          e.preventDefault();
-          e.stopPropagation();
-          this.send(["stdin", toSend]);
-          textarea.value = "";
-          this.deactivateModifiers();
-          this.pendingCtrl = false;
-          this.pendingShift = false;
-          return;
-        }
+      if (e.inputType === "insertText" && e.data) {
+        handleMobileInput(e.data, e);
+        return;
+      }
 
       let seq: string | null = null;
       switch (e.inputType) {
@@ -716,39 +725,13 @@ class WebTerminal {
           break;
       }
       if (seq) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.send(["stdin", seq]);
-        // Clear modifiers after sending special keys from soft keyboard
-        this.deactivateModifiers();
+        handleMobileInput(seq, e);
       }
     });
 
     // Handle input from mobile keyboard (regular text only, special keys handled above)
     textarea.addEventListener("input", () => {
-      const value = textarea.value;
-      if (value) {
-        let toSend = value;
-        // Apply Shift modifier (uppercase letters)
-        if (this.shiftActive || this.pendingShift) {
-          toSend = value.toUpperCase();
-        }
-        // Apply Ctrl modifier if active (convert letters to control codes)
-        if (this.ctrlActive || this.pendingCtrl) {
-          const firstChar = toSend[0] ?? "";
-          const code = firstChar.toUpperCase().charCodeAt(0);
-          if (code >= 65 && code <= 90) {
-            toSend = String.fromCharCode(code - 64); // Ctrl+A = 0x01, Ctrl+D = 0x04, etc.
-          } else {
-            toSend = firstChar;
-          }
-        }
-        this.send(["stdin", toSend]);
-        textarea.value = "";
-        this.deactivateModifiers();
-        this.pendingCtrl = false;
-        this.pendingShift = false;
-      }
+      handleMobileInput(textarea.value);
     });
 
     // Handle special navigation keys via keydown (not covered by beforeinput)
