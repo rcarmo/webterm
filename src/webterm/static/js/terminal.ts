@@ -607,6 +607,7 @@ class WebTerminal {
 
     // Setup mobile keyboard support
     this.setupMobileKeyboard();
+    this.setupTouchSelection();
 
     // Setup mobile extended keybar (only on mobile devices)
     if (isMobileDevice()) {
@@ -669,6 +670,7 @@ class WebTerminal {
       resize: none;
       font-size: 16px;
       caret-color: transparent;
+      pointer-events: none;
     `;
     // Font size 16px prevents iOS auto-zoom on focus
     
@@ -885,6 +887,55 @@ class WebTerminal {
     this.element.addEventListener("click", focusTextarea);
   }
 
+  private setupTouchSelection(): void {
+    const canvas = this.element.querySelector("canvas");
+    if (!canvas) return;
+
+    const dispatchMouse = (type: "mousedown" | "mousemove" | "mouseup", touch: Touch) => {
+      const rect = canvas.getBoundingClientRect();
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        button: 0,
+        buttons: type === "mouseup" ? 0 : 1,
+      });
+      canvas.dispatchEvent(event);
+    };
+
+    canvas.addEventListener(
+      "touchstart",
+      (e) => {
+        if (e.touches.length !== 1) return;
+        dispatchMouse("mousedown", e.touches[0]);
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+
+    canvas.addEventListener(
+      "touchmove",
+      (e) => {
+        if (e.touches.length !== 1) return;
+        dispatchMouse("mousemove", e.touches[0]);
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+
+    canvas.addEventListener(
+      "touchend",
+      (e) => {
+        const touch = e.changedTouches[0];
+        if (!touch) return;
+        dispatchMouse("mouseup", touch);
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+  }
+
   /** Setup draggable mobile extended keyboard bar */
   private setupMobileKeybar(): void {
     const keybar = document.createElement("div");
@@ -974,6 +1025,11 @@ class WebTerminal {
         if (this.shiftActive && key === "\x09") {
           key = "\x1b[Z";
         }
+        // Handle Ctrl+Shift+Arrow keys (CSI 1;6 X)
+        else if (this.ctrlActive && this.shiftActive && key.startsWith("\x1b[") && key.length === 3) {
+          const dir = key[2];
+          key = `\x1b[1;6${dir}`;
+        }
         // Handle Shift+Arrow keys (CSI 1;2 X)
         else if (this.shiftActive && key.startsWith("\x1b[") && key.length === 3) {
           const dir = key[2]; // A, B, C, or D
@@ -983,11 +1039,6 @@ class WebTerminal {
         else if (this.ctrlActive && key.startsWith("\x1b[") && key.length === 3) {
           const dir = key[2];
           key = `\x1b[1;5${dir}`;
-        }
-        // Handle Ctrl+Shift+Arrow keys (CSI 1;6 X)
-        else if (this.ctrlActive && this.shiftActive && key.startsWith("\x1b[") && key.length === 3) {
-          const dir = key[2];
-          key = `\x1b[1;6${dir}`;
         }
         // Apply Ctrl modifier to letters
         else if (this.ctrlActive && key.length === 1) {
