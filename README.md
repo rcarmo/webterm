@@ -15,7 +15,7 @@ Coupled with [`agentbox`](https://github.com/rcarmo/agentbox), you can use it to
 ## Features
 
 - **Web-based terminal** - Access your terminal from any browser
-- **Mobile support** - Works on iOS Safari and Android with on-screen keyboard
+- **Mobile support** - Works on iOS Safari and Android with on-screen keyboard modifier (experimental) and touch selection
 - **Session reconnection** - Refresh the page and reconnect to the same session
 - **Full terminal emulation** - Colors, cursor, and ANSI codes work correctly
 - **Customizable themes** - 9 built-in themes (monokai, dracula, nord, etc.)
