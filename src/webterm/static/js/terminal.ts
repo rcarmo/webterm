@@ -420,9 +420,13 @@ class WebTerminal {
   private mobileInput: HTMLTextAreaElement | null = null;
   private mobileKeybar: HTMLElement | null = null;
   private ctrlActive = false;
+  private altActive = false;
   private shiftActive = false;
+  private fnActive = false;
   private pendingCtrl = false;
+  private pendingAlt = false;
   private pendingShift = false;
+  private pendingFn = false;
   private fontFamily: string;
   private fontSize: number;
 
@@ -733,23 +737,82 @@ class WebTerminal {
       }
       return key;
     };
-    const applyModifiers = (text: string, useShift: boolean, useCtrl: boolean): string => {
+    const applyFnModifier = (key: string, useShift: boolean): string | null => {
+      if (key.length !== 1) {
+        return null;
+      }
+      const index = "1234567890".indexOf(key);
+      if (index < 0) {
+        return null;
+      }
+      const fnNormal = [
+        "\x1bOP",
+        "\x1bOQ",
+        "\x1bOR",
+        "\x1bOS",
+        "\x1b[15~",
+        "\x1b[17~",
+        "\x1b[18~",
+        "\x1b[19~",
+        "\x1b[20~",
+        "\x1b[21~",
+      ];
+      const fnShift = [
+        "\x1b[23~",
+        "\x1b[24~",
+        "\x1b[25~",
+        "\x1b[26~",
+        "\x1b[28~",
+        "\x1b[29~",
+        "\x1b[31~",
+        "\x1b[32~",
+        "\x1b[33~",
+        "\x1b[34~",
+      ];
+      return useShift ? fnShift[index] : fnNormal[index];
+    };
+    const applyAltModifier = (text: string): string => {
+      if (!text || text.startsWith("\x1b")) {
+        return text;
+      }
+      return `\x1b${text}`;
+    };
+    const applyModifiers = (
+      text: string,
+      useShift: boolean,
+      useCtrl: boolean,
+      useAlt: boolean,
+      useFn: boolean
+    ): string => {
       if (text.length !== 1) {
         return text;
+      }
+      if (useFn) {
+        const fnApplied = applyFnModifier(text, useShift);
+        if (fnApplied) {
+          return useAlt ? applyAltModifier(fnApplied) : fnApplied;
+        }
       }
       if (useCtrl) {
         const ctrlApplied = applyCtrlModifier(text);
         if (ctrlApplied !== text) {
-          return ctrlApplied;
+          return useAlt ? applyAltModifier(ctrlApplied) : ctrlApplied;
         }
       }
       if (useShift) {
-        return applyShiftModifier(text);
+        const shifted = applyShiftModifier(text);
+        return useAlt ? applyAltModifier(shifted) : shifted;
       }
-      return text;
+      return useAlt ? applyAltModifier(text) : text;
     };
     const applyMobileModifiers = (text: string): string =>
-      applyModifiers(text, this.shiftActive || this.pendingShift, this.ctrlActive || this.pendingCtrl);
+      applyModifiers(
+        text,
+        this.shiftActive || this.pendingShift,
+        this.ctrlActive || this.pendingCtrl,
+        this.altActive || this.pendingAlt,
+        this.fnActive || this.pendingFn
+      );
 
     const handleMobileInput = (text: string, e?: Event) => {
       if (e) {
@@ -763,7 +826,9 @@ class WebTerminal {
       textarea.value = "";
       this.deactivateModifiers();
       this.pendingCtrl = false;
+      this.pendingAlt = false;
       this.pendingShift = false;
+      this.pendingFn = false;
     };
 
     // Handle special keys via beforeinput to intercept before browser modifies textarea
@@ -800,6 +865,8 @@ class WebTerminal {
     textarea.addEventListener("keydown", (e) => {
       const isCtrl = e.ctrlKey || this.ctrlActive;
       const isShift = e.shiftKey || this.shiftActive;
+      const isAlt = e.altKey || this.altActive;
+      const isFn = this.fnActive;
 
       // Handle Ctrl+key combinations (these don't fire input events)
       if (isCtrl && e.key.length === 1 && !e.altKey && !e.metaKey) {
@@ -807,8 +874,19 @@ class WebTerminal {
         if (ctrlApplied !== e.key) {
           e.preventDefault();
           e.stopPropagation();
-          this.send(["stdin", ctrlApplied]); // Ctrl+A=0x01, Ctrl+C=0x03, etc.
+          const toSend = isAlt ? applyAltModifier(ctrlApplied) : ctrlApplied;
+          this.send(["stdin", toSend]); // Ctrl+A=0x01, Ctrl+C=0x03, etc.
           this.deactivateModifiers(); // Clear modifiers after physical Ctrl+key
+          return;
+        }
+      }
+      if (isFn && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        const fnApplied = applyFnModifier(e.key, isShift);
+        if (fnApplied) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.send(["stdin", fnApplied]);
+          this.deactivateModifiers();
           return;
         }
       }
@@ -846,7 +924,7 @@ class WebTerminal {
       if (seq) {
         e.preventDefault();
         e.stopPropagation();
-        this.send(["stdin", seq]);
+        this.send(["stdin", isAlt ? applyAltModifier(seq) : seq]);
         // Always clear modifiers after any key
         this.deactivateModifiers();
       }
@@ -856,7 +934,7 @@ class WebTerminal {
     document.addEventListener(
       "keydown",
       (event) => {
-      if (!this.ctrlActive && !this.shiftActive) {
+      if (!this.ctrlActive && !this.shiftActive && !this.altActive && !this.fnActive) {
         return;
       }
       if (event.target === this.mobileInput) {
@@ -865,10 +943,12 @@ class WebTerminal {
 
       const useCtrl = this.ctrlActive;
       const useShift = this.shiftActive;
+      const useAlt = this.altActive;
+      const useFn = this.fnActive;
       let handled = false;
 
       if (event.key.length === 1 && !event.altKey && !event.metaKey) {
-        const toSend = applyModifiers(event.key, useShift, useCtrl);
+        const toSend = applyModifiers(event.key, useShift, useCtrl, useAlt, useFn);
         event.preventDefault();
         event.stopPropagation();
         this.send(["stdin", toSend]);
@@ -914,7 +994,7 @@ class WebTerminal {
         if (seq) {
           event.preventDefault();
           event.stopPropagation();
-          this.send(["stdin", seq]);
+          this.send(["stdin", useAlt ? applyAltModifier(seq) : seq]);
           handled = true;
         }
       }
@@ -994,11 +1074,13 @@ class WebTerminal {
       <button class="keybar-drag" title="Drag to move">⋮⋮</button>
       <button data-key="\\x1b" title="Escape">Esc</button>
       <button data-modifier="ctrl" title="Ctrl modifier">Ctrl</button>
-      <button data-modifier="shift" title="Shift modifier">⇧</button>
+      <button data-modifier="alt" title="Alt modifier">Alt</button>
+      <button data-modifier="fn" title="Fn modifier">Fn</button>
       <button data-key="\\x09" title="Tab">Tab</button>
-      <button data-key="\\x1b[A" title="Up">↑</button>
-      <button data-key="\\x1b[B" title="Down">↓</button>
+      <button data-modifier="shift" title="Shift modifier">⇧</button>
       <button data-key="\\x1b[D" title="Left">←</button>
+      <button data-key="\\x1b[B" title="Down">↓</button>
+      <button data-key="\\x1b[A" title="Up">↑</button>
       <button data-key="\\x1b[C" title="Right">→</button>
       <button data-key="\\x0d" title="Return" class="keybar-return">⏎</button>
     `;
@@ -1011,7 +1093,7 @@ class WebTerminal {
         bottom: 80px;
         right: 0;
         display: grid;
-        grid-template-columns: repeat(5, auto);
+        grid-template-columns: repeat(6, auto);
         gap: 4px;
         padding: 6px;
         background: rgba(40, 40, 40, 0.95);
@@ -1052,7 +1134,7 @@ class WebTerminal {
         cursor: grabbing;
       }
       .mobile-keybar .keybar-return {
-        grid-column: 5;
+        grid-column: 6;
         grid-row: 2;
       }
     `;
@@ -1071,31 +1153,40 @@ class WebTerminal {
         );
         key = key.replace(/\\x1b/g, "\x1b");
 
+        const useShift = this.shiftActive;
+        const useCtrl = this.ctrlActive;
+        const useAlt = this.altActive;
+        const useFn = this.fnActive;
+        const useShiftForFn = useShift || this.pendingShift;
         // Handle Shift+Tab -> Back-Tab (CSI Z)
-        if (this.shiftActive && key === "\x09") {
+        if (useShift && key === "\x09") {
           key = "\x1b[Z";
         }
         // Handle Ctrl+Shift+Arrow keys (CSI 1;6 X)
-        else if (this.ctrlActive && this.shiftActive && key.startsWith("\x1b[") && key.length === 3) {
+        else if (useCtrl && useShift && key.startsWith("\x1b[") && key.length === 3) {
           const dir = key[2];
           key = `\x1b[1;6${dir}`;
         }
         // Handle Shift+Arrow keys (CSI 1;2 X)
-        else if (this.shiftActive && key.startsWith("\x1b[") && key.length === 3) {
+        else if (useShift && key.startsWith("\x1b[") && key.length === 3) {
           const dir = key[2]; // A, B, C, or D
           key = `\x1b[1;2${dir}`;
         }
         // Handle Ctrl+Arrow keys (CSI 1;5 X)
-        else if (this.ctrlActive && key.startsWith("\x1b[") && key.length === 3) {
+        else if (useCtrl && key.startsWith("\x1b[") && key.length === 3) {
           const dir = key[2];
           key = `\x1b[1;5${dir}`;
         }
-        // Apply Ctrl modifier to letters
-        else if (this.ctrlActive && key.length === 1) {
-          const code = key.toUpperCase().charCodeAt(0);
-          if (code >= 65 && code <= 90) {
-            key = String.fromCharCode(code - 64); // Ctrl+A = 0x01, etc.
+        if (useFn && key.length === 1) {
+          const fnApplied = applyFnModifier(key, useShiftForFn);
+          if (fnApplied) {
+            key = fnApplied;
           }
+        }
+        if (key.length === 1) {
+          key = applyModifiers(key, useShift, useCtrl, useAlt, useFn);
+        } else if (useAlt) {
+          key = applyAltModifier(key);
         }
 
         this.send(["stdin", key]);
@@ -1112,10 +1203,18 @@ class WebTerminal {
           this.ctrlActive = !this.ctrlActive;
           this.pendingCtrl = this.ctrlActive;
           btn.classList.toggle("active", this.ctrlActive);
+        } else if (modifier === "alt") {
+          this.altActive = !this.altActive;
+          this.pendingAlt = this.altActive;
+          btn.classList.toggle("active", this.altActive);
         } else if (modifier === "shift") {
           this.shiftActive = !this.shiftActive;
           this.pendingShift = this.shiftActive;
           btn.classList.toggle("active", this.shiftActive);
+        } else if (modifier === "fn") {
+          this.fnActive = !this.fnActive;
+          this.pendingFn = this.fnActive;
+          btn.classList.toggle("active", this.fnActive);
         }
         this.focusMobileInput();
       });
@@ -1177,9 +1276,13 @@ class WebTerminal {
   /** Deactivate all modifiers */
   private deactivateModifiers(): void {
     this.ctrlActive = false;
+    this.altActive = false;
     this.shiftActive = false;
+    this.fnActive = false;
     this.pendingCtrl = false;
+    this.pendingAlt = false;
     this.pendingShift = false;
+    this.pendingFn = false;
     this.mobileKeybar?.querySelectorAll("button[data-modifier]").forEach((btn) => {
       btn.classList.remove("active");
     });
