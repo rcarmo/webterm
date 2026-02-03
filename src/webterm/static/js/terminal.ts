@@ -406,6 +406,138 @@ function isMobileDevice(): boolean {
   );
 }
 
+const SHIFT_KEY_MAP: Record<string, string> = {
+  "`": "~",
+  "1": "!",
+  "2": "@",
+  "3": "#",
+  "4": "$",
+  "5": "%",
+  "6": "^",
+  "7": "&",
+  "8": "*",
+  "9": "(",
+  "0": ")",
+  "-": "_",
+  "=": "+",
+  "[": "{",
+  "]": "}",
+  "\\": "|",
+  ";": ":",
+  "'": "\"",
+  ",": "<",
+  ".": ">",
+  "/": "?",
+};
+
+const CTRL_KEY_MAP: Record<string, string> = {
+  "2": "@",
+  "3": "[",
+  "4": "\\",
+  "5": "]",
+  "6": "^",
+  "7": "_",
+  "8": "?",
+};
+
+const FN_NORMAL_KEYS = [
+  "\x1bOP",
+  "\x1bOQ",
+  "\x1bOR",
+  "\x1bOS",
+  "\x1b[15~",
+  "\x1b[17~",
+  "\x1b[18~",
+  "\x1b[19~",
+  "\x1b[20~",
+  "\x1b[21~",
+];
+
+const FN_SHIFT_KEYS = [
+  "\x1b[23~",
+  "\x1b[24~",
+  "\x1b[25~",
+  "\x1b[26~",
+  "\x1b[28~",
+  "\x1b[29~",
+  "\x1b[31~",
+  "\x1b[32~",
+  "\x1b[33~",
+  "\x1b[34~",
+];
+
+function applyShiftModifier(key: string): string {
+  if (key.length !== 1) {
+    return key;
+  }
+  if (key >= "a" && key <= "z") {
+    return key.toUpperCase();
+  }
+  return SHIFT_KEY_MAP[key] ?? key;
+}
+
+function applyCtrlModifier(key: string): string {
+  if (key.length !== 1) {
+    return key;
+  }
+  const mapped = CTRL_KEY_MAP[key] ?? key;
+  if (mapped === "?") {
+    return "\x7f";
+  }
+  const code = mapped.toUpperCase().charCodeAt(0);
+  if (code >= 64 && code <= 95) {
+    return String.fromCharCode(code - 64);
+  }
+  return key;
+}
+
+function applyFnModifier(key: string, useShift: boolean): string | null {
+  if (key.length !== 1) {
+    return null;
+  }
+  const index = "1234567890".indexOf(key);
+  if (index < 0) {
+    return null;
+  }
+  return useShift ? FN_SHIFT_KEYS[index] : FN_NORMAL_KEYS[index];
+}
+
+function applyAltModifier(text: string): string {
+  if (!text || text.startsWith("\x1b")) {
+    return text;
+  }
+  return `\x1b${text}`;
+}
+
+function applyModifiers(
+  text: string,
+  useShift: boolean,
+  useCtrl: boolean,
+  useAlt: boolean,
+  useFn: boolean
+): string {
+  if (text.length !== 1) {
+    return text;
+  }
+  if (useFn) {
+    const fnApplied = applyFnModifier(text, useShift);
+    if (fnApplied) {
+      return useAlt ? applyAltModifier(fnApplied) : fnApplied;
+    }
+  }
+  if (useCtrl) {
+    const ctrlApplied = applyCtrlModifier(text);
+    if (ctrlApplied !== text) {
+      return useAlt ? applyAltModifier(ctrlApplied) : ctrlApplied;
+    }
+  }
+  if (useShift) {
+    const shifted = applyShiftModifier(text);
+    return useAlt ? applyAltModifier(shifted) : shifted;
+  }
+  return useAlt ? applyAltModifier(text) : text;
+}
+
 class WebTerminal {
   private terminal: Terminal;
   private fitAddon: FitAddon;
@@ -682,129 +814,6 @@ class WebTerminal {
     this.element.appendChild(textarea);
     this.mobileInput = textarea;
 
-    const shiftKeyMap: Record<string, string> = {
-      "`": "~",
-      "1": "!",
-      "2": "@",
-      "3": "#",
-      "4": "$",
-      "5": "%",
-      "6": "^",
-      "7": "&",
-      "8": "*",
-      "9": "(",
-      "0": ")",
-      "-": "_",
-      "=": "+",
-      "[": "{",
-      "]": "}",
-      "\\": "|",
-      ";": ":",
-      "'": "\"",
-      ",": "<",
-      ".": ">",
-      "/": "?",
-    };
-    const ctrlKeyMap: Record<string, string> = {
-      "2": "@",
-      "3": "[",
-      "4": "\\",
-      "5": "]",
-      "6": "^",
-      "7": "_",
-      "8": "?",
-    };
-    const applyShiftModifier = (key: string): string => {
-      if (key.length !== 1) {
-        return key;
-      }
-      if (key >= "a" && key <= "z") {
-        return key.toUpperCase();
-      }
-      return shiftKeyMap[key] ?? key;
-    };
-    const applyCtrlModifier = (key: string): string => {
-      if (key.length !== 1) {
-        return key;
-      }
-      const mapped = ctrlKeyMap[key] ?? key;
-      if (mapped === "?") {
-        return "\x7f";
-      }
-      const code = mapped.toUpperCase().charCodeAt(0);
-      if (code >= 64 && code <= 95) {
-        return String.fromCharCode(code - 64);
-      }
-      return key;
-    };
-    const applyFnModifier = (key: string, useShift: boolean): string | null => {
-      if (key.length !== 1) {
-        return null;
-      }
-      const index = "1234567890".indexOf(key);
-      if (index < 0) {
-        return null;
-      }
-      const fnNormal = [
-        "\x1bOP",
-        "\x1bOQ",
-        "\x1bOR",
-        "\x1bOS",
-        "\x1b[15~",
-        "\x1b[17~",
-        "\x1b[18~",
-        "\x1b[19~",
-        "\x1b[20~",
-        "\x1b[21~",
-      ];
-      const fnShift = [
-        "\x1b[23~",
-        "\x1b[24~",
-        "\x1b[25~",
-        "\x1b[26~",
-        "\x1b[28~",
-        "\x1b[29~",
-        "\x1b[31~",
-        "\x1b[32~",
-        "\x1b[33~",
-        "\x1b[34~",
-      ];
-      return useShift ? fnShift[index] : fnNormal[index];
-    };
-    const applyAltModifier = (text: string): string => {
-      if (!text || text.startsWith("\x1b")) {
-        return text;
-      }
-      return `\x1b${text}`;
-    };
-    const applyModifiers = (
-      text: string,
-      useShift: boolean,
-      useCtrl: boolean,
-      useAlt: boolean,
-      useFn: boolean
-    ): string => {
-      if (text.length !== 1) {
-        return text;
-      }
-      if (useFn) {
-        const fnApplied = applyFnModifier(text, useShift);
-        if (fnApplied) {
-          return useAlt ? applyAltModifier(fnApplied) : fnApplied;
-        }
-      }
-      if (useCtrl) {
-        const ctrlApplied = applyCtrlModifier(text);
-        if (ctrlApplied !== text) {
-          return useAlt ? applyAltModifier(ctrlApplied) : ctrlApplied;
-        }
-      }
-      if (useShift) {
-        const shifted = applyShiftModifier(text);
-        return useAlt ? applyAltModifier(shifted) : shifted;
-      }
-      return useAlt ? applyAltModifier(text) : text;
-    };
     const applyMobileModifiers = (text: string): string =>
       applyModifiers(
         text,
@@ -1078,9 +1087,9 @@ class WebTerminal {
       <button data-modifier="fn" title="Fn modifier">Fn</button>
       <button data-key="\\x09" title="Tab">Tab</button>
       <button data-modifier="shift" title="Shift modifier">⇧</button>
-      <button data-key="\\x1b[D" title="Left">←</button>
-      <button data-key="\\x1b[B" title="Down">↓</button>
       <button data-key="\\x1b[A" title="Up">↑</button>
+      <button data-key="\\x1b[B" title="Down">↓</button>
+      <button data-key="\\x1b[D" title="Left">←</button>
       <button data-key="\\x1b[C" title="Right">→</button>
       <button data-key="\\x0d" title="Return" class="keybar-return">⏎</button>
     `;
