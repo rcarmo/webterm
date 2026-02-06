@@ -52,7 +52,8 @@ Manages the mapping between route keys and sessions:
 Manages a single terminal session:
 
 - **PTY management**: Fork/exec with pseudo-terminal
-- **pyte emulator**: Interprets ANSI escape sequences for screen state
+- **pyte emulator**: Uses `AltScreen` (patched pyte) for ANSI interpretation
+- **Data pipeline**: C1 normalization → `expand_clear_sequences()` → `stream.feed()`
 - **Replay buffer**: 64KB ring buffer for reconnection support
 - **Resize handling**: Propagates window size changes to PTY
 
@@ -218,6 +219,8 @@ pyte provides a pure-Python terminal emulator that tracks screen state character
 - Dirty tracking for efficient cache invalidation
 - Full ANSI/VT100 escape sequence support
 
+pyte 0.8.2 has gaps (no alternate screen buffer, no CSI S/T scroll), so `AltScreen` in `alt_screen.py` monkeypatches pyte at import time to fill them — see [pyte-patches.md](pyte-patches.md) for details.
+
 ### Why session persistence?
 
 Unlike traditional web terminals, sessions survive page refreshes:
@@ -230,6 +233,7 @@ Unlike traditional web terminals, sessions survive page refreshes:
 
 ```
 src/webterm/
+├── alt_screen.py       # pyte Screen subclass with alt buffer + SU/SD patches
 ├── cli.py              # Click CLI entry point
 ├── config.py           # Configuration parsing (YAML manifests)
 ├── local_server.py     # Main HTTP/WebSocket server
