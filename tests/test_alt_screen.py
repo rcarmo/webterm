@@ -206,3 +206,96 @@ class TestExpandClearSequences:
         result = screen.expand_clear_sequences(data)
         assert result.startswith(b"before")
         assert result.endswith(b"after")
+
+
+class TestScrollUpDown:
+    """Tests for CSI S (SU) and CSI T (SD) support."""
+
+    def test_scroll_up_basic(self):
+        """CSI S scrolls content up, adding blank lines at bottom."""
+        screen = AltScreen(40, 10)
+        stream = pyte.ByteStream(screen)
+        for i in range(10):
+            stream.feed(f"Line {i}\r\n".encode())
+
+        # After writing, Line 0 already scrolled off; rows 0-8 have Lines 1-9
+        # Scroll up 3 more lines
+        stream.feed(b"\x1b[3S")
+
+        assert "Line 4" in screen.display[0]
+        assert "Line 9" in screen.display[5]
+        assert screen.display[6].strip() == ""
+
+    def test_scroll_up_default_one(self):
+        """CSI S with no parameter defaults to 1 line."""
+        screen = AltScreen(40, 5)
+        stream = pyte.ByteStream(screen)
+        for i in range(5):
+            stream.feed(f"L{i}\r\n".encode())
+
+        stream.feed(b"\x1b[S")
+        assert "L1" in screen.display[0]
+
+    def test_scroll_down_basic(self):
+        """CSI T scrolls content down, adding blank lines at top."""
+        screen = AltScreen(40, 10)
+        stream = pyte.ByteStream(screen)
+        for i in range(10):
+            stream.feed(f"Line {i}\r\n".encode())
+
+        stream.feed(b"\x1b[3T")
+
+        assert screen.display[0].strip() == ""
+        assert screen.display[2].strip() == ""
+        assert "Line 1" in screen.display[3]
+
+    def test_scroll_up_with_margins(self):
+        """SU respects the scroll region set by DECSTBM."""
+        screen = AltScreen(40, 10)
+        stream = pyte.ByteStream(screen)
+        for i in range(10):
+            stream.feed(f"Row {i}\r\n".encode())
+
+        # After writing, rows 0-8 have Row 1..Row 9
+        # Set scroll region to rows 3-7 (1-based: 4;8)
+        stream.feed(b"\x1b[4;8r")
+        stream.feed(b"\x1b[2S")
+
+        # Rows outside the region should be unchanged
+        assert "Row 1" in screen.display[0]
+        assert "Row 2" in screen.display[1]
+        assert "Row 3" in screen.display[2]
+        # Rows inside the region shifted up by 2
+        assert "Row 6" in screen.display[3]
+
+    def test_scroll_up_clears_ghost_content(self):
+        """Simulates tmux sending SU during Ink /clear — ghost content is eliminated."""
+        screen = AltScreen(80, 24)
+        stream = pyte.ByteStream(screen)
+
+        # Fill screen with "old" content
+        for i in range(24):
+            stream.feed(f"Old line {i}\r\n".encode())
+
+        non_empty_before = sum(1 for line in screen.display if line.strip())
+        assert non_empty_before > 15
+
+        # Simulate tmux clear: set margins, scroll up, reset margins
+        stream.feed(b"\x1b[1;23r")   # Set scroll region
+        stream.feed(b"\x1b[20S")     # Scroll up 20 lines
+        stream.feed(b"\x1b[r")       # Reset scroll region
+
+        non_empty_after = sum(1 for line in screen.display if line.strip())
+        assert non_empty_after <= 5, f"Expected <= 5 non-empty lines, got {non_empty_after}"
+
+    def test_scroll_up_cursor_unchanged(self):
+        """SU does not move the cursor position."""
+        screen = AltScreen(40, 10)
+        stream = pyte.ByteStream(screen)
+        stream.feed(b"\x1b[5;10H")  # Move cursor to row 5, col 10
+
+        saved_y, saved_x = screen.cursor.y, screen.cursor.x
+        stream.feed(b"\x1b[3S")
+
+        assert screen.cursor.y == saved_y
+        assert screen.cursor.x == saved_x

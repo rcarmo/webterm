@@ -16,11 +16,23 @@ import re
 from typing import TYPE_CHECKING, Any
 
 import pyte
+from pyte.screens import Margins
 
 # Pattern to match a run of 3+ (EL2 + CUU1) pairs used by Ink/React CLI
 # to erase the previous frame before drawing the next one.
 _INK_CLEAR_PATTERN = re.compile(rb"(\x1b\[2K\x1b\[1A){3,}")
 _EL2_CUU1 = b"\x1b[2K\x1b[1A"
+
+# Patch pyte's CSI dispatch table to handle SU (Scroll Up, CSI S) and
+# SD (Scroll Down, CSI T).  Without this, tmux output using xterm-256color
+# sends CSI S for scrolling which pyte silently ignores, causing ghost
+# content to remain on screen.
+pyte.ByteStream.csi["S"] = "scroll_up"
+pyte.ByteStream.csi["T"] = "scroll_down"
+pyte.Stream.csi["S"] = "scroll_up"
+pyte.Stream.csi["T"] = "scroll_down"
+# Update the events frozenset so pyte recognises these as valid events.
+pyte.Stream.events = pyte.Stream.events | frozenset(["scroll_up", "scroll_down"])
 
 if TYPE_CHECKING:
     from pyte.screens import Char
@@ -131,6 +143,38 @@ class AltScreen(pyte.Screen):
             self._saved_cursor = None
 
         super().resize(lines, columns)
+
+    def scroll_up(self, count: int = 1) -> None:
+        """Scroll the screen up by *count* lines within the scroll region.
+
+        Lines scrolled off the top are lost; blank lines are added at the
+        bottom.  The cursor position is not changed.
+
+        Implements CSI n S (SU — Scroll Up), which pyte does not handle
+        natively.  tmux sends this when TERM supports the ``indn``
+        capability (e.g. xterm-256color).
+        """
+        top, bottom = self.margins or Margins(0, self.lines - 1)
+        self.dirty.update(range(self.lines))
+        for _ in range(min(count, bottom - top + 1)):
+            for y in range(top, bottom):
+                self.buffer[y] = self.buffer[y + 1]
+            self.buffer.pop(bottom, None)
+
+    def scroll_down(self, count: int = 1) -> None:
+        """Scroll the screen down by *count* lines within the scroll region.
+
+        Lines scrolled off the bottom are lost; blank lines are added at
+        the top.  The cursor position is not changed.
+
+        Implements CSI n T (SD — Scroll Down).
+        """
+        top, bottom = self.margins or Margins(0, self.lines - 1)
+        self.dirty.update(range(self.lines))
+        for _ in range(min(count, bottom - top + 1)):
+            for y in range(bottom, top, -1):
+                self.buffer[y] = self.buffer[y - 1]
+            self.buffer.pop(top, None)
 
     def expand_clear_sequences(self, data: bytes) -> bytes:
         """Expand partial line-by-line clears to cover the full screen.

@@ -55,6 +55,24 @@ Frame N+1 (broken): EL2+CUU1 × 6  (clears rows 30→24) + redraw 6 lines   ✗
 
 ## Fix
 
+### Primary fix: CSI S (Scroll Up) and CSI T (Scroll Down) support
+
+The root cause is that **pyte does not implement `CSI S` (SU — Scroll Up) or `CSI T` (SD — Scroll Down)**.  When `TERM=xterm-256color` is set, tmux uses `CSI n S` to scroll content up in the outer terminal instead of the DECSTBM + index approach used with simpler TERM types.  Without SU support, pyte silently ignores these scroll commands, leaving old content in place.
+
+The fix monkeypatches pyte's `ByteStream.csi` and `Stream.csi` dispatch tables to map `"S"` → `scroll_up` and `"T"` → `scroll_down`, and adds the corresponding methods to `AltScreen`.
+
+```python
+# In alt_screen.py — patch pyte's CSI dispatch
+pyte.ByteStream.csi["S"] = "scroll_up"
+pyte.ByteStream.csi["T"] = "scroll_down"
+
+# AltScreen implements scroll_up() and scroll_down()
+# which shift buffer lines within the scroll region,
+# matching real terminal behaviour.
+```
+
+### Secondary fix: expand_clear_sequences (best-effort)
+
 `AltScreen.expand_clear_sequences()` in `alt_screen.py` pre-processes incoming terminal data before it reaches pyte. It detects runs of 3+ `EL2+CUU1` pairs and, if the run doesn't reach row 0, extends it with additional pairs so the erase covers all lines from the cursor position up to the top of the screen.
 
 ```python
