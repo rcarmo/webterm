@@ -8,6 +8,10 @@ on:
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}
 
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ${{ matrix.runner }}
@@ -114,62 +118,15 @@ jobs:
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
-  prune-releases:
-    name: Prune old releases
-    runs-on: ubuntu-latest
-    needs: merge
-    permissions:
-      contents: write
-    steps:
-      - name: Prune releases and tags
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const keep = 5;
-            const { owner, repo } = context.repo;
-            const releases = await github.paginate(github.rest.repos.listReleases, {
-              owner,
-              repo,
-              per_page: 100,
-            });
-            core.info(`Found ${releases.length} releases; keeping latest ${keep}.`);
-            const toDelete = releases.slice(keep);
-            for (const release of toDelete) {
-              core.info(`Deleting release ${release.tag_name} (id ${release.id})`);
-              await github.rest.repos.deleteRelease({
-                owner,
-                repo,
-                release_id: release.id,
-              });
-              if (!release.tag_name) {
-                core.info(`Release ${release.id} has no tag.`);
-                continue;
-              }
-              const refs = await github.rest.git.listMatchingRefs({
-                owner,
-                repo,
-                ref: `tags/${release.tag_name}`,
-              });
-              if (refs.data.length === 0) {
-                core.info(`Tag ${release.tag_name} not found; skipping.`);
-                continue;
-              }
-              await github.rest.git.deleteRef({
-                owner,
-                repo,
-                ref: `tags/${release.tag_name}`,
-              });
-            }
-
   cleanup:
-    name: Cleanup old runs, tags, and artifacts
+    name: Cleanup old runs and artifacts
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     needs: merge
     permissions:
       actions: write
-      contents: write
     steps:
-      - name: Cleanup old workflow runs, tags, and artifacts
+      - name: Cleanup old workflow runs and artifacts
         uses: actions/github-script@v7
         with:
           script: |
@@ -179,96 +136,48 @@ jobs:
             core.info('Fetching workflow runs...');
             const runs = await github.paginate(
               github.rest.actions.listWorkflowRunsForRepo,
-              {
-                owner,
-                repo,
-                per_page: 100,
-              }
+              { owner, repo, per_page: 100 }
             );
-
             const sortedRuns = runs.sort((a, b) =>
               new Date(b.created_at) - new Date(a.created_at)
             );
             const runsToDelete = sortedRuns.slice(keepCount);
-
-            core.info(`Found ${runs.length} workflow runs, keeping ${keepCount} newest, deleting ${runsToDelete.length} older...`);
+            core.info(`Found ${runs.length} workflow runs, deleting ${runsToDelete.length} older runs...`);
             for (const run of runsToDelete) {
-              core.info(`Deleting run #${run.run_number} from ${run.created_at}`);
               try {
-                await github.rest.actions.deleteWorkflowRun({
-                  owner,
-                  repo,
-                  run_id: run.id,
-                });
+                await github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: run.id });
               } catch (error) {
                 core.warning(`Failed to delete run ${run.id}: ${error.message}`);
-              }
-            }
-
-            core.info('Fetching tags...');
-            const tags = await github.paginate(
-              github.rest.repos.listTags,
-              {
-                owner,
-                repo,
-                per_page: 100,
-              }
-            );
-
-            const currentTag = context.ref.replace('refs/tags/', '');
-            const otherTags = tags.filter(tag => tag.name !== currentTag);
-            const tagsToDelete = otherTags.slice(keepCount);
-
-            core.info(`Found ${tags.length} tags, keeping ${keepCount} newest (including current: ${currentTag}), deleting ${tagsToDelete.length} older...`);
-            for (const tag of tagsToDelete) {
-              core.info(`Deleting tag ${tag.name}`);
-              try {
-                await github.rest.git.deleteRef({
-                  owner,
-                  repo,
-                  ref: `tags/${tag.name}`,
-                });
-              } catch (error) {
-                core.warning(`Failed to delete tag ${tag.name}: ${error.message}`);
               }
             }
 
             core.info('Fetching artifacts...');
             const artifacts = await github.paginate(
               github.rest.actions.listArtifactsForRepo,
-              {
-                owner,
-                repo,
-                per_page: 100,
-              }
+              { owner, repo, per_page: 100 }
             );
             const sortedArtifacts = artifacts
               .filter(artifact => !artifact.expired)
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
             const artifactsToDelete = sortedArtifacts.slice(keepCount);
-
-            core.info(`Found ${artifacts.length} artifacts, keeping ${keepCount} newest, deleting ${artifactsToDelete.length} older...`);
+            core.info(`Found ${artifacts.length} artifacts, deleting ${artifactsToDelete.length} older artifacts...`);
             for (const artifact of artifactsToDelete) {
-              core.info(`Deleting artifact ${artifact.name} (id ${artifact.id})`);
               try {
-                await github.rest.actions.deleteArtifact({
-                  owner,
-                  repo,
-                  artifact_id: artifact.id,
-                });
+                await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: artifact.id });
               } catch (error) {
                 core.warning(`Failed to delete artifact ${artifact.id}: ${error.message}`);
               }
             }
 
-  prune-docker-images:
-    name: Prune old Docker images
+  cleanup-ghcr:
+    name: Cleanup old GHCR images
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     needs: merge
     permissions:
       packages: write
     steps:
-      - name: Delete untagged images
+      - name: Delete untagged and old images
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.RELEASES_TOKEN || secrets.GITHUB_TOKEN }}
@@ -276,73 +185,71 @@ jobs:
             const keepCount = 5;
             const { owner, repo } = context.repo;
             const packageName = repo.toLowerCase();
-            
-            core.info(`Cleaning Docker images for repository: ${owner}/${repo}`);
-            core.info(`Package name in registry: ${packageName}`);
-            
+
             try {
-              // Get all package versions for THIS repository's container package only
+              const ownerInfo = await github.rest.users.getByUsername({ username: owner });
+              const isOrg = ownerInfo.data.type === 'Organization';
+              const ownerArgs = isOrg ? { org: owner } : { username: owner };
+              const listVersions = isOrg
+                ? github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg
+                : github.rest.packages.getAllPackageVersionsForPackageOwnedByUser;
+              const deleteVersion = isOrg
+                ? github.rest.packages.deletePackageVersionForOrg
+                : github.rest.packages.deletePackageVersionForUser;
+
               const versions = await github.paginate(
-                github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
+                listVersions,
                 {
                   package_type: 'container',
-                  package_name: packageName,  // This filters to only this repo's images
-                  org: owner,
+                  package_name: packageName,
                   per_page: 100,
                   state: 'active',
+                  ...ownerArgs,
                 }
               );
-              
-              core.info(`Found ${versions.length} package versions`);
-              
-              // Separate tagged and untagged versions
+
               const taggedVersions = versions.filter(v => v.metadata?.container?.tags?.length > 0);
               const untaggedVersions = versions.filter(v => !v.metadata?.container?.tags || v.metadata.container.tags.length === 0);
-              
-              core.info(`Tagged versions: ${taggedVersions.length}, Untagged versions: ${untaggedVersions.length}`);
-              
-              // Delete all untagged versions
-              for (const version of untaggedVersions) {
-                core.info(`Deleting untagged version ${version.id} (created: ${version.created_at})`);
+              const sortedTagged = taggedVersions.sort((a, b) =>
+                new Date(b.created_at) - new Date(a.created_at)
+              );
+              const taggedToDelete = sortedTagged.slice(keepCount);
+
+              const oldestKept = sortedTagged.length > 0
+                ? new Date(sortedTagged[Math.min(keepCount, sortedTagged.length) - 1].created_at)
+                : new Date();
+              const untaggedToDelete = untaggedVersions.filter(v =>
+                new Date(v.created_at) < oldestKept
+              );
+
+              for (const version of untaggedToDelete) {
                 try {
-                  await github.rest.packages.deletePackageVersionForOrg({
+                  await deleteVersion({
                     package_type: 'container',
                     package_name: packageName,
-                    org: owner,
                     package_version_id: version.id,
+                    ...ownerArgs,
                   });
                 } catch (error) {
                   core.warning(`Failed to delete untagged version ${version.id}: ${error.message}`);
                 }
               }
-              
-              // Sort tagged versions by creation date (newest first)
-              const sortedTagged = taggedVersions.sort((a, b) => 
-                new Date(b.created_at) - new Date(a.created_at)
-              );
-              
-              // Keep the newest versions, delete the rest
-              const versionsToDelete = sortedTagged.slice(keepCount);
-              
-              core.info(`Keeping ${keepCount} newest tagged versions, deleting ${versionsToDelete.length} older ones...`);
-              for (const version of versionsToDelete) {
-                const tags = version.metadata?.container?.tags?.join(', ') || 'unknown';
-                core.info(`Deleting version ${version.id} with tags: ${tags} (created: ${version.created_at})`);
+
+              for (const version of taggedToDelete) {
                 try {
-                  await github.rest.packages.deletePackageVersionForOrg({
+                  await deleteVersion({
                     package_type: 'container',
                     package_name: packageName,
-                    org: owner,
                     package_version_id: version.id,
+                    ...ownerArgs,
                   });
                 } catch (error) {
-                  core.warning(`Failed to delete version ${version.id}: ${error.message}`);
+                  core.warning(`Failed to delete tagged version ${version.id}: ${error.message}`);
                 }
               }
-              
             } catch (error) {
               if (error.status === 404) {
-                core.info('No package found - this might be the first build');
+                core.info('No package found; skipping GHCR cleanup.');
               } else {
                 core.setFailed(`Error managing package versions: ${error.message}`);
               }

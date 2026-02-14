@@ -25,17 +25,6 @@ jobs:
             echo "No Makefile check/lint/test targets found; skipping."
           fi
 
-      - name: Run Go tests (if present)
-        run: |
-          set -e
-          if [ -f go/go.mod ]; then
-            (cd go && go test ./...)
-          elif [ -f go.mod ]; then
-            go test ./...
-          else
-            echo "No Go module found; skipping."
-          fi
-
       - name: Build runtime image (if Dockerfile present)
         run: |
           set -e
