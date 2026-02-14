@@ -1,10 +1,13 @@
-.PHONY: help install install-dev lint format test race coverage check fuzz build-go build build-fast bundle bundle-watch bundle-clean clean clean-all build-all typecheck
+.PHONY: help install install-dev lint format test race coverage check fuzz build-go build build-fast bundle bundle-watch bundle-clean clean clean-all build-all typecheck bump-patch
 
 GO_DIR = go
 STATIC_JS_DIR = go/webterm/static/js
 TERMINAL_TS = $(STATIC_JS_DIR)/terminal.ts
 TERMINAL_JS = $(STATIC_JS_DIR)/terminal.js
 GHOSTTY_WASM = $(STATIC_JS_DIR)/ghostty-vt.wasm
+VERSION_FILE = VERSION
+VERSION = $(shell test -f $(VERSION_FILE) && cat $(VERSION_FILE) || echo dev)
+GO_VERSION_LDFLAGS = -X github.com/rcarmo/webterm-go-port/webterm.Version=$(VERSION)
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -55,7 +58,7 @@ bundle-watch: node_modules ## Watch mode for frontend development
 	bun run watch
 
 build-go: ## Build Go CLI binary
-	cd $(GO_DIR) && mkdir -p bin && go build -o ./bin/webterm ./cmd/webterm
+	cd $(GO_DIR) && mkdir -p bin && go build -ldflags "$(GO_VERSION_LDFLAGS)" -o ./bin/webterm ./cmd/webterm
 
 clean: ## Remove coverage artifacts
 	rm -f $(GO_DIR)/coverage.out
@@ -67,3 +70,16 @@ clean-all: clean bundle-clean ## Remove all generated artifacts
 
 build-all: clean-all install-dev build check build-go ## Full reproducible build from scratch
 	@echo "Build complete!"
+
+bump-patch: ## Bump patch version in VERSION and create git tag
+	@if [ ! -f $(VERSION_FILE) ]; then echo "VERSION file not found"; exit 1; fi
+	@OLD=$$(cat $(VERSION_FILE)); \
+	MAJOR=$$(echo $$OLD | cut -d. -f1); \
+	MINOR=$$(echo $$OLD | cut -d. -f2); \
+	PATCH=$$(echo $$OLD | cut -d. -f3); \
+	NEW="$$MAJOR.$$MINOR.$$((PATCH + 1))"; \
+	echo $$NEW > $(VERSION_FILE); \
+	git add $(VERSION_FILE); \
+	git commit -m "Bump version to $$NEW"; \
+	git tag "v$$NEW"; \
+	echo "Bumped version: $$OLD -> $$NEW (tagged v$$NEW)"

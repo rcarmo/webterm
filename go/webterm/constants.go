@@ -7,7 +7,6 @@ import (
 )
 
 const (
-	Version               = "1.3.0"
 	DefaultHost           = "0.0.0.0"
 	DefaultPort           = 8080
 	DefaultTheme          = "xterm"
@@ -23,7 +22,25 @@ const (
 	AutoCommandSentinel = "__docker_exec__"
 )
 
+var Version = "dev"
+
 var Windows = runtime.GOOS == "windows"
+
+func init() {
+	if strings.TrimSpace(Version) != "" && Version != "dev" {
+		return
+	}
+	for _, candidate := range []string{"VERSION", "../VERSION", "../../VERSION"} {
+		data, err := os.ReadFile(candidate)
+		if err != nil {
+			continue
+		}
+		if v := strings.TrimSpace(string(data)); v != "" {
+			Version = v
+			return
+		}
+	}
+}
 
 func EnvBool(name string) bool {
 	v, ok := os.LookupEnv(name)

@@ -2,7 +2,7 @@
 
 ![Icon](docs/icon-256.png)
 
-`webterm` serves terminal sessions over HTTP/WebSocket, with a dashboard mode for multiple sessions and Docker-aware tiles.
+`webterm` serves terminal sessions over HTTP/WebSocket, with a dashboard mode for multiple sessions and live-updating terminal tiles.
 
 This repository is the Go port of the original Python implementation, which is preserved in the `python` branch.
 
@@ -10,6 +10,7 @@ This repository is the Go port of the original Python implementation, which is p
 
 ## Features
 
+- Typeahead find for quickly finding and launching sessions with minimal friction
 - Web terminal with reconnect support
 - Ghostty WebAssembly terminal engine for fast rendering
 - Session dashboard with live SVG screenshots
@@ -101,6 +102,7 @@ make install-dev
 make check
 make race
 make test
+make bump-patch
 ```
 
 Frontend bundle tasks:

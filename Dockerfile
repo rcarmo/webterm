@@ -7,7 +7,8 @@ WORKDIR /src
 COPY go/go.mod go/go.sum ./go/
 RUN cd go && go mod download
 COPY go ./go
-RUN cd go && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/webterm ./cmd/webterm
+COPY VERSION ./VERSION
+RUN cd go && VERSION=$(cat /src/VERSION) && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/rcarmo/webterm-go-port/webterm.Version=$VERSION" -o /out/webterm ./cmd/webterm
 
 FROM alpine:3.21 AS runtime
 
