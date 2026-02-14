@@ -1137,7 +1137,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		document.addEventListener('keydown', handleKeydown);
 
 		function dashboardCanRequestScreenshots() {
-			return document.visibilityState === 'visible' && document.hasFocus();
+			return document.visibilityState === 'visible';
 		}
 
 		function onDashboardFocusChanged() {
