@@ -51,3 +51,49 @@ func TestTrackerResize(t *testing.T) {
 		t.Fatalf("expected resize to mark snapshot as changed")
 	}
 }
+
+func FuzzTrackerFeed(f *testing.F) {
+	f.Add([]byte("hello world"))
+	f.Add([]byte("\x1b[31;1mRed Bold\x1b[0m"))
+	f.Add([]byte("\x1b[2J\x1b[H"))
+	f.Add([]byte("\x1b[10;20H\x1b[K"))
+	f.Add([]byte("\r\n\r\n\r\n"))
+	f.Add([]byte{0x00, 0x01, 0x02, 0x1b, 0x5b, 0x41})
+	f.Add([]byte("\x1b[?1049h\x1b[2J"))
+	f.Add([]byte("\x1b[38;5;196mcolor\x1b[0m"))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		tracker := NewTracker(80, 24)
+		// Feed must not panic
+		_ = tracker.Feed(data)
+		// Snapshot must always return valid dimensions
+		snap := tracker.Snapshot()
+		if snap.Width != 80 || snap.Height != 24 {
+			t.Errorf("unexpected dimensions after feed: %dx%d", snap.Width, snap.Height)
+		}
+		if len(snap.Buffer) != 24 {
+			t.Errorf("buffer row count mismatch: got %d", len(snap.Buffer))
+		}
+		for i, row := range snap.Buffer {
+			if len(row) != 80 {
+				t.Errorf("row %d col count mismatch: got %d", i, len(row))
+			}
+		}
+	})
+}
+
+func FuzzTrackerFeedIncremental(f *testing.F) {
+	f.Add([]byte("\x1b[31m"), []byte("hello\x1b[0m"))
+	f.Add([]byte("abc"), []byte("def"))
+	f.Add([]byte("\x1b["), []byte("1;2H"))
+
+	f.Fuzz(func(t *testing.T, chunk1, chunk2 []byte) {
+		tracker := NewTracker(40, 10)
+		_ = tracker.Feed(chunk1)
+		_ = tracker.Feed(chunk2)
+		snap := tracker.Snapshot()
+		if snap.Width != 40 || snap.Height != 10 {
+			t.Errorf("unexpected dimensions: %dx%d", snap.Width, snap.Height)
+		}
+	})
+}

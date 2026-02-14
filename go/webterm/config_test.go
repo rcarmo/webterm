@@ -60,3 +60,38 @@ services:
 		t.Fatalf("expected theme to be parsed")
 	}
 }
+
+func FuzzExtractLabel(f *testing.F) {
+	f.Add("webterm-command=auto", "webterm-command")
+	f.Add("webterm-theme=monokai", "webterm-theme")
+	f.Add("no-equals-sign", "no-equals-sign")
+	f.Add("key=", "key")
+	f.Add("=value", "")
+	f.Add("key=val=ue", "key")
+	f.Add("", "")
+
+	f.Fuzz(func(t *testing.T, labelEntry, key string) {
+		// Test list-style labels
+		listLabels := []any{labelEntry}
+		result := extractLabel(listLabels, key)
+		_ = result // Must not panic
+
+		// Test map-style labels — note asString() applies os.ExpandEnv
+		mapLabels := map[string]any{key: labelEntry}
+		result2 := extractLabel(mapLabels, key)
+		// Result should be the env-expanded version of the entry
+		_ = result2 // Must not panic
+
+		// Test nil labels
+		result3 := extractLabel(nil, key)
+		if result3 != "" {
+			t.Errorf("extractLabel(nil, %q) = %q, want empty", key, result3)
+		}
+
+		// Test unsupported type
+		result4 := extractLabel(42, key)
+		if result4 != "" {
+			t.Errorf("extractLabel(42, %q) = %q, want empty", key, result4)
+		}
+	})
+}
