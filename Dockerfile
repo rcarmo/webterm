@@ -17,9 +17,6 @@ RUN apk add --no-cache ca-certificates docker-cli
 
 WORKDIR /app
 COPY --from=builder /out/webterm /usr/local/bin/webterm
-COPY go/webterm/static /app/static
-
-ENV WEBTERM_STATIC_PATH=/app/static
 
 EXPOSE 8080
 

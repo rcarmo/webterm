@@ -1466,6 +1466,8 @@ func (s *LocalServer) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleRoot)
 	if strings.TrimSpace(s.staticPath) != "" {
 		mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(s.staticPath))))
+	} else if staticFS, ok := embeddedStaticFS(); ok {
+		mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(staticFS)))
 	}
 	return s.loggingMiddleware(s.gzipMiddleware(mux))
 }

@@ -221,6 +221,15 @@ func TestRootTerminalPageAndSparklineValidation(t *testing.T) {
 		t.Fatalf("unexpected root page: %q", text)
 	}
 
+	respStatic, err := http.Get(httpServer.URL + "/static/manifest.json")
+	if err != nil {
+		t.Fatalf("static request error = %v", err)
+	}
+	_ = respStatic.Body.Close()
+	if respStatic.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for static manifest, got %d", respStatic.StatusCode)
+	}
+
 	resp2, err := http.Get(httpServer.URL + "/cpu-sparkline.svg")
 	if err != nil {
 		t.Fatalf("sparkline request error = %v", err)

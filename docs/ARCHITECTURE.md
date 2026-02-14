@@ -48,6 +48,7 @@ The server resolves static files from:
 
 1. `WEBTERM_STATIC_PATH` (if set)
 2. local repository-relative fallbacks rooted at `go/webterm/static`
+3. embedded assets bundled into the Go binary
 
 ## Docker integration
 

@@ -120,5 +120,5 @@ docker build -t webterm .
 docker run -v /var/run/docker.sock:/var/run/docker.sock -p 8080:8080 webterm --docker-watch
 ```
 
-The image sets `WEBTERM_STATIC_PATH=/app/static` and serves assets from `go/webterm/static`.
+Web assets are embedded in the Go binary by default (you can still override with `WEBTERM_STATIC_PATH`).
 The Dockerfile uses a minimal Alpine runtime stage and only installs `ca-certificates` plus `docker-cli`.
