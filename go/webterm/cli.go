@@ -48,7 +48,7 @@ func RunCLI(args []string) error {
 		return err
 	}
 	if showVersion {
-		_, _ = fmt.Fprintln(os.Stdout, "0.0.0")
+		_, _ = fmt.Fprintln(os.Stdout, Version)
 		return nil
 	}
 

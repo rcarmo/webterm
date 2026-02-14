@@ -7,6 +7,7 @@ import (
 )
 
 const (
+	Version               = "1.3.0"
 	DefaultHost           = "0.0.0.0"
 	DefaultPort           = 8080
 	DefaultTheme          = "xterm"

@@ -73,7 +73,7 @@ func (s *TerminalSession) Open(width, height int) error {
 		return errors.New("empty command")
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Env = append(os.Environ(), "TERM_PROGRAM=webterm-go", "TERM_PROGRAM_VERSION=0.0.0")
+	cmd.Env = append(os.Environ(), "TERM_PROGRAM=webterm-go", "TERM_PROGRAM_VERSION="+Version)
 	file, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(width), Rows: uint16(height)})
 	if err != nil {
 		return err
