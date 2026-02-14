@@ -190,16 +190,18 @@ type localClientConnector struct {
 }
 
 func (c *localClientConnector) OnData(data []byte) {
-	c.server.markRouteActivity(c.routeKey)
 	c.server.enqueueWSFrame(c.routeKey, websocket.BinaryMessage, data)
 }
 
 func (c *localClientConnector) OnBinary(payload []byte) {
-	c.server.markRouteActivity(c.routeKey)
 	c.server.enqueueWSFrame(c.routeKey, websocket.BinaryMessage, payload)
 }
 
-func (c *localClientConnector) OnMeta(_ map[string]any) {}
+func (c *localClientConnector) OnMeta(meta map[string]any) {
+	if changed, ok := meta["screen_changed"].(bool); ok && changed {
+		c.server.markRouteActivity(c.routeKey)
+	}
+}
 
 func (c *localClientConnector) OnClose() {
 	c.server.sessionManager.OnSessionEnd(c.sessionID)
@@ -589,6 +591,25 @@ func (s *LocalServer) screenshotTTL(routeKey string) time.Duration {
 	}
 }
 
+func etagMatches(ifNoneMatch, etag string) bool {
+	etag = strings.Trim(strings.TrimSpace(etag), `"`)
+	if etag == "" {
+		return false
+	}
+	for _, candidate := range strings.Split(ifNoneMatch, ",") {
+		value := strings.TrimSpace(candidate)
+		if value == "*" {
+			return true
+		}
+		value = strings.TrimPrefix(value, "W/")
+		value = strings.Trim(value, `"`)
+		if value == etag {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *LocalServer) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	routeKey := r.URL.Query().Get("route_key")
 	routeKey, session, ok := s.chooseRouteForScreenshot(routeKey)
@@ -616,17 +637,23 @@ func (s *LocalServer) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.RLock()
 	cached, hasCached := s.screenshotCache[routeKey]
+	lastActivity := s.routeLastActivity[routeKey]
 	s.mu.RUnlock()
 	if hasCached && time.Since(cached.when) < s.screenshotTTL(routeKey) {
-		if match := r.Header.Get("If-None-Match"); match != "" && match == cached.etag {
-			w.WriteHeader(http.StatusNotModified)
+		if etagMatches(r.Header.Get("If-None-Match"), cached.etag) {
+			if !lastActivity.After(cached.when) {
+				w.Header().Set("Cache-Control", "no-cache")
+				w.Header().Set("ETag", cached.etag)
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("ETag", cached.etag)
+			w.Header().Set("Content-Type", "image/svg+xml")
+			_, _ = io.WriteString(w, cached.svg)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("ETag", cached.etag)
-		w.Header().Set("Content-Type", "image/svg+xml")
-		_, _ = io.WriteString(w, cached.svg)
-		return
 	}
 
 	if s.screenshotForceRedraw {
@@ -635,6 +662,12 @@ func (s *LocalServer) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 
 	snapshot := session.GetScreenSnapshot()
 	if hasCached && !snapshot.HasChanges {
+		if etagMatches(r.Header.Get("If-None-Match"), cached.etag) {
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("ETag", cached.etag)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("ETag", cached.etag)
 		w.Header().Set("Content-Type", "image/svg+xml")
@@ -662,10 +695,16 @@ func (s *LocalServer) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 
 	svg := RenderTerminalSVG(snapshot.Buffer, snapshot.Width, snapshot.Height, "webterm", background, foreground, palette)
 	hash := sha1.Sum([]byte(svg))
-	etag := fmt.Sprintf("%x", hash[:])
+	etag := fmt.Sprintf(`"%x"`, hash[:])
 	s.mu.Lock()
 	s.screenshotCache[routeKey] = screenshotCacheEntry{when: time.Now(), svg: svg, etag: etag}
 	s.mu.Unlock()
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("ETag", etag)
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("ETag", etag)
@@ -878,6 +917,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		const keyIndicatorEl = document.getElementById('key-indicator');
 		const thumbnailCache = {};
 		const activeObjectURLBySlug = {};
+		const etagBySlug = {};
 		const refreshQueue = [];
 		const queuedRefresh = {};
 		let screenshotRequestInFlight = false;
@@ -1124,8 +1164,16 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 			const url = '/screenshot.svg?route_key=' + encodeURIComponent(slug);
 			const controller = new AbortController();
 			const timeout = setTimeout(() => controller.abort(), 5000);
-			fetch(url, { cache: 'no-cache', signal: controller.signal })
+			const headers = {};
+			if (etagBySlug[slug]) {
+				headers['If-None-Match'] = etagBySlug[slug];
+			}
+			fetch(url, { cache: 'no-cache', headers, signal: controller.signal })
 				.then((resp) => {
+					const nextETag = resp.headers.get('ETag');
+					if (nextETag) {
+						etagBySlug[slug] = nextETag;
+					}
 					if (resp.status === 304) return null;
 					if (!resp.ok) throw new Error('screenshot fetch failed');
 					return resp.blob();

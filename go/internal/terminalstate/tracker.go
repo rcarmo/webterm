@@ -50,6 +50,7 @@ type Tracker struct {
 	screen              *te.DiffScreen
 	stream              *te.ByteStream
 	changeCounter       uint64
+	lastActivityCounter uint64
 	lastSnapshotCounter uint64
 }
 
@@ -123,6 +124,16 @@ func (t *Tracker) Snapshot() Snapshot {
 		snapshot.Buffer[row] = line
 	}
 	return snapshot
+}
+
+func (t *Tracker) ConsumeActivityChanged() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.changeCounter > t.lastActivityCounter {
+		t.lastActivityCounter = t.changeCounter
+		return true
+	}
+	return false
 }
 
 func colorToString(color te.Color) string {

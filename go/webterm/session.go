@@ -38,10 +38,15 @@ func dispatchSessionOutput(filtered []byte, tracker *terminalstate.Tracker, repl
 		return
 	}
 	replay.Add(filtered)
+	hasVisualChange := false
 	if tracker != nil {
 		_ = tracker.Feed(filtered)
+		hasVisualChange = tracker.ConsumeActivityChanged()
 	}
 	connector.OnData(filtered)
+	if hasVisualChange {
+		connector.OnMeta(map[string]any{"screen_changed": true})
+	}
 }
 
 func snapshotFromTracker(tracker *terminalstate.Tracker, width, height int) terminalstate.Snapshot {
