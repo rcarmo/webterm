@@ -24,5 +24,5 @@ Always use the Makefile for development tasks. Never run raw `go test`, `go vet`
 
 1. **Before changes**: Run `make check` to establish baseline.
 2. **After changes**: Run `make check` and `make race`.
-3. **Frontend edits**: Run `make build` after changing `go/webterm/static/js/terminal.ts`.
+3. **Frontend edits**: Run `make build` after changing `webterm/static/js/terminal.ts`.
 4. **Major validation**: Run `make build-all` for a reproducible full run.

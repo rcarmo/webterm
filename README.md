@@ -27,26 +27,24 @@ This repository is the Go port of the original Python implementation, which is p
 
 ```bash
 git clone https://github.com/rcarmo/webterm.git
-cd webterm/go
+cd webterm
 mkdir -p bin
 go build -o ./bin/webterm ./cmd/webterm
 ```
 
-The command above produces `go/bin/webterm`; you can also build it from repo root with `make build-go`.
+The command above produces `bin/webterm`; you can also build it from repo root with `make build-go`.
 
 ## Quick start
 
 Run a default shell session:
 
 ```bash
-cd go
 go run ./cmd/webterm
 ```
 
 Run a specific command:
 
 ```bash
-cd go
 go run ./cmd/webterm -- htop
 ```
 
@@ -64,14 +62,12 @@ Then open <http://localhost:8080>.
 ```
 
 ```bash
-cd go
-go run ./cmd/webterm -- --landing-manifest ../landing.yaml
+go run ./cmd/webterm -- --landing-manifest ./landing.yaml
 ```
 
 ### Docker watch
 
 ```bash
-cd go
 go run ./cmd/webterm -- --docker-watch
 ```
 
@@ -83,8 +79,7 @@ Containers with these labels become tiles:
 ### Compose manifest
 
 ```bash
-cd go
-go run ./cmd/webterm -- --compose-manifest ../docker-compose.yaml
+go run ./cmd/webterm -- --compose-manifest ./docker-compose.yaml
 ```
 
 ## Environment variables

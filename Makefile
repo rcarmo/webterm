@@ -1,7 +1,7 @@
 .PHONY: help install install-dev lint format test race coverage check fuzz build-go build build-fast bundle bundle-watch bundle-clean clean clean-all build-all typecheck bump-patch push
 
-GO_DIR = go
-STATIC_JS_DIR = go/webterm/static/js
+GO_DIR = .
+STATIC_JS_DIR = webterm/static/js
 TERMINAL_TS = $(STATIC_JS_DIR)/terminal.ts
 TERMINAL_JS = $(STATIC_JS_DIR)/terminal.js
 GHOSTTY_WASM = $(STATIC_JS_DIR)/ghostty-vt.wasm

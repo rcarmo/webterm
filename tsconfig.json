@@ -12,6 +12,6 @@
     "isolatedModules": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["go/webterm/static/js/**/*.ts"],
+  "include": ["webterm/static/js/**/*.ts"],
   "exclude": ["node_modules"]
 }

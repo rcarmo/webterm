@@ -10,14 +10,13 @@
 webterm.log
 
 # Coverage/build artifacts
-go/coverage.out
 coverage.out
 dist/
 build/
 target/
 
 # Go
-go/bin/
+bin/
 
 # Frontend
 node_modules/

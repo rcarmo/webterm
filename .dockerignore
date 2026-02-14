@@ -1,6 +1,12 @@
 *
-!go/
-!go/**
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!webterm/
+!webterm/**
+!go.mod
+!go.sum
 !Dockerfile
 !.dockerignore
 !VERSION

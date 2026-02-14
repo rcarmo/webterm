@@ -9,7 +9,7 @@ Browser (terminal.js + ghostty-vt.wasm)
         │
         │ WS / HTTP / SSE
         ▼
-go/webterm/server.go (LocalServer)
+webterm/server.go (LocalServer)
         │
         ├── session_manager.go      (route/app/session registry)
         ├── terminal_session.go     (PTY-backed local sessions)
@@ -21,9 +21,9 @@ go/webterm/server.go (LocalServer)
 
 ## Packages
 
-- `go/cmd/webterm`: CLI entrypoint
-- `go/webterm`: server/runtime/domain logic
-- `go/internal/terminalstate`: Go terminal emulator wrapper (`go-te`) used for screenshots
+- `cmd/webterm`: CLI entrypoint
+- `webterm`: server/runtime/domain logic
+- `internal/terminalstate`: Go terminal emulator wrapper (`go-te`) used for screenshots
 
 ## Runtime data flow
 
@@ -37,7 +37,7 @@ go/webterm/server.go (LocalServer)
 
 ## Static assets
 
-Assets live in `go/webterm/static`:
+Assets live in `webterm/static`:
 
 - `js/terminal.ts` source
 - `js/terminal.js` bundled client
@@ -47,7 +47,7 @@ Assets live in `go/webterm/static`:
 The server resolves static files from:
 
 1. `WEBTERM_STATIC_PATH` (if set)
-2. local repository-relative fallbacks rooted at `go/webterm/static`
+2. local repository-relative fallbacks rooted at `webterm/static`
 3. embedded assets bundled into the Go binary
 
 ## Docker integration

@@ -7,5 +7,5 @@ Applies when: this repo has `go.mod`.
 - Put `golangci-lint` and `gosec` wiring behind Make targets when introduced.
 
 ## Conventions to implement
-- `make test` should run `cd go && go test ./...`.
+- `make test` should run `go test ./...`.
 - Avoid bespoke CI steps when a Make target can encode the same behavior.
