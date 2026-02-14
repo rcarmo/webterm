@@ -43,7 +43,6 @@ type DockerExecSession struct {
 	tracker      *terminalstate.Tracker
 	replay       *ReplayBuffer
 	escapeBuffer []byte
-	utf8Buffer   []byte
 	width        int
 	height       int
 	running      bool
@@ -145,19 +144,17 @@ func (s *DockerExecSession) handleOutput(data []byte) {
 	s.mu.Lock()
 	filtered, escapeBuffer := FilterDASequences(data, s.escapeBuffer)
 	s.escapeBuffer = escapeBuffer
-	normalized, utf8Buffer := NormalizeC1Controls(filtered, s.utf8Buffer)
-	s.utf8Buffer = utf8Buffer
 	tracker := s.tracker
 	connector := s.connector
 	s.mu.Unlock()
-	if len(normalized) == 0 {
+	if len(filtered) == 0 {
 		return
 	}
-	s.replay.Add(normalized)
+	s.replay.Add(filtered)
 	if tracker != nil {
-		_ = tracker.Feed(normalized)
+		_ = tracker.Feed(filtered)
 	}
-	connector.OnData(normalized)
+	connector.OnData(filtered)
 }
 
 func (s *DockerExecSession) createExec() (string, error) {
