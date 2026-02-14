@@ -1,6 +1,10 @@
 package terminalstate
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/rcarmo/go-te/pkg/te"
+)
 
 func TestTrackerSnapshotChangeTracking(t *testing.T) {
 	tracker := NewTracker(10, 3)
@@ -49,6 +53,24 @@ func TestTrackerResize(t *testing.T) {
 	}
 	if !snapshot.HasChanges {
 		t.Fatalf("expected resize to mark snapshot as changed")
+	}
+}
+
+func TestColorToStringModes(t *testing.T) {
+	if got := colorToString(te.Color{Mode: te.ColorDefault}); got != "default" {
+		t.Fatalf("default color mismatch: %q", got)
+	}
+	if got := colorToString(te.Color{Mode: te.ColorANSI16, Index: 1}); got != "red" {
+		t.Fatalf("ansi16 color mismatch: %q", got)
+	}
+	if got := colorToString(te.Color{Mode: te.ColorANSI256, Index: 196}); got != "196" {
+		t.Fatalf("ansi256 color mismatch: %q", got)
+	}
+	if got := colorToString(te.Color{Name: "#AABBCC"}); got != "aabbcc" {
+		t.Fatalf("named hex color mismatch: %q", got)
+	}
+	if got := colorToString(te.Color{Name: "Blue"}); got != "blue" {
+		t.Fatalf("named color mismatch: %q", got)
 	}
 }
 
