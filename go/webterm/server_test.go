@@ -192,6 +192,22 @@ func TestScreenshotAndETag(t *testing.T) {
 	}
 }
 
+func TestScreenshotCreatesSessionFromRequestedRoute(t *testing.T) {
+	_, httpServer, _ := newServerForTests(t, false)
+	resp, err := http.Get(httpServer.URL + "/screenshot.svg?route_key=shell")
+	if err != nil {
+		t.Fatalf("screenshot request error = %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%q", resp.StatusCode, string(body))
+	}
+	if !strings.Contains(string(body), "<svg") {
+		t.Fatalf("expected svg body")
+	}
+}
+
 func TestRootTerminalPageAndSparklineValidation(t *testing.T) {
 	_, httpServer, _ := newServerForTests(t, false)
 	resp, err := http.Get(httpServer.URL + "/?route_key=shell")

@@ -1,19 +1,23 @@
-# webterm (Go)
+# webterm
 
 ![Icon](docs/icon-256.png)
 
 `webterm` serves terminal sessions over HTTP/WebSocket, with a dashboard mode for multiple sessions and Docker-aware tiles.
+
+This repository is the Go port of the original Python implementation, which is preserved in the `python` branch.
 
 ![Screenshot](docs/screenshot.png)
 
 ## Features
 
 - Web terminal with reconnect support
+- Ghostty WebAssembly terminal engine for fast rendering
 - Session dashboard with live SVG screenshots
 - Docker watch mode (`webterm-command` / `webterm-theme` labels)
 - Docker compose manifest ingestion
 - CPU sparkline tiles for compose services
 - SSE activity updates for fast dashboard refresh
+- Mobile/touch support with virtual keyboard + draggable keybar
 - Theme/font controls for terminal rendering
 
 ## Install

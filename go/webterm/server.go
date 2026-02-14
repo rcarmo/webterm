@@ -1,11 +1,14 @@
 package webterm
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -56,6 +59,59 @@ type wsClient struct {
 type wsOutbound struct {
 	messageType int
 	payload     []byte
+}
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (w *loggingResponseWriter) WriteHeader(statusCode int) {
+	w.status = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *loggingResponseWriter) Write(payload []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	n, err := w.ResponseWriter.Write(payload)
+	w.bytes += n
+	return n, err
+}
+
+func (w *loggingResponseWriter) ReadFrom(r io.Reader) (int64, error) {
+	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+		if w.status == 0 {
+			w.status = http.StatusOK
+		}
+		n, err := rf.ReadFrom(r)
+		w.bytes += int(n)
+		return n, err
+	}
+	return io.Copy(w.ResponseWriter, r)
+}
+
+func (w *loggingResponseWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (w *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("response writer does not support hijacking")
+	}
+	return hijacker.Hijack()
+}
+
+func (w *loggingResponseWriter) Push(target string, opts *http.PushOptions) error {
+	if pusher, ok := w.ResponseWriter.(http.Pusher); ok {
+		return pusher.Push(target, opts)
+	}
+	return http.ErrNotSupported
 }
 
 type LocalServer struct {
@@ -300,6 +356,19 @@ func parseResizePayload(value any) (int, int) {
 	return clampInt(width, 1, 500), clampInt(height, 1, 500)
 }
 
+func (s *LocalServer) loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		lw := &loggingResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(lw, r)
+		status := lw.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		log.Printf("%s %s status=%d bytes=%d duration=%s remote=%s", r.Method, r.URL.RequestURI(), status, lw.bytes, time.Since(start), r.RemoteAddr)
+	})
+}
+
 func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	routeKey := strings.TrimPrefix(r.URL.Path, "/ws/")
 	if routeKey == "" {
@@ -308,8 +377,11 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		log.Printf("websocket upgrade failed route=%s remote=%s err=%v", routeKey, r.RemoteAddr, err)
 		return
 	}
+	log.Printf("websocket connected route=%s remote=%s", routeKey, r.RemoteAddr)
+	defer log.Printf("websocket disconnected route=%s remote=%s", routeKey, r.RemoteAddr)
 	defer conn.Close()
 
 	client := &wsClient{
@@ -361,6 +433,9 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	for {
 		messageType, payload, err := conn.ReadMessage()
 		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				log.Printf("websocket read error route=%s remote=%s err=%v", routeKey, r.RemoteAddr, err)
+			}
 			return
 		}
 		if messageType != websocket.TextMessage {
@@ -428,11 +503,10 @@ func (s *LocalServer) chooseRouteForScreenshot(requested string) (string, Sessio
 		if session != nil {
 			return requested, session, true
 		}
+		return requested, nil, false
 	}
-	if requested == "" {
-		if routeKey, session, ok := s.sessionManager.GetFirstRunningSession(); ok {
-			return routeKey, session, true
-		}
+	if routeKey, session, ok := s.sessionManager.GetFirstRunningSession(); ok {
+		return routeKey, session, true
 	}
 	return "", nil, false
 }
@@ -823,7 +897,7 @@ func (s *LocalServer) Handler() http.Handler {
 	if strings.TrimSpace(s.staticPath) != "" {
 		mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(s.staticPath))))
 	}
-	return mux
+	return s.loggingMiddleware(mux)
 }
 
 func (s *LocalServer) Run(ctx context.Context) error {
