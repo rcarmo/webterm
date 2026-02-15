@@ -10,7 +10,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY webterm ./webterm
 COPY VERSION ./VERSION
-RUN VERSION=$(cat /src/VERSION) && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/rcarmo/webterm-go-port/webterm.Version=$VERSION" -o /out/webterm ./cmd/webterm
+RUN VERSION=$(cat /src/VERSION) && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/rcarmo/webterm/webterm.Version=$VERSION" -o /out/webterm ./cmd/webterm
 
 FROM alpine:3.21 AS runtime
 

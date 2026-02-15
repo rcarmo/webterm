@@ -7,7 +7,7 @@ TERMINAL_JS = $(STATIC_JS_DIR)/terminal.js
 GHOSTTY_WASM = $(STATIC_JS_DIR)/ghostty-vt.wasm
 VERSION_FILE = VERSION
 VERSION = $(shell test -f $(VERSION_FILE) && cat $(VERSION_FILE) || echo dev)
-GO_VERSION_LDFLAGS = -X github.com/rcarmo/webterm-go-port/webterm.Version=$(VERSION)
+GO_VERSION_LDFLAGS = -X github.com/rcarmo/webterm/webterm.Version=$(VERSION)
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rcarmo/webterm-go-port/webterm"
+	"github.com/rcarmo/webterm/webterm"
 )
 
 func main() {

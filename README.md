@@ -24,6 +24,12 @@ This repository is the Go port of the original Python implementation, which is p
 
 ## Install
 
+### Quick install
+
+```bash
+go install github.com/rcarmo/webterm/cmd/webterm@latest
+```
+
 ### Build from source
 
 ```bash

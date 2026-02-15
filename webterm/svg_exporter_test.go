@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rcarmo/webterm-go-port/internal/terminalstate"
+	"github.com/rcarmo/webterm/internal/terminalstate"
 )
 
 func TestRenderTerminalSVG(t *testing.T) {

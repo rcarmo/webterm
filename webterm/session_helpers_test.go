@@ -3,7 +3,7 @@ package webterm
 import (
 	"testing"
 
-	"github.com/rcarmo/webterm-go-port/internal/terminalstate"
+	"github.com/rcarmo/webterm/internal/terminalstate"
 )
 
 type captureConnector struct {

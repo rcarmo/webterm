@@ -1,7 +1,7 @@
 package webterm
 
 import (
-	"github.com/rcarmo/webterm-go-port/internal/terminalstate"
+	"github.com/rcarmo/webterm/internal/terminalstate"
 )
 
 type SessionConnector interface {

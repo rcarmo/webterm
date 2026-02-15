@@ -1,4 +1,4 @@
-module github.com/rcarmo/webterm-go-port
+module github.com/rcarmo/webterm
 
 go 1.24.0
 

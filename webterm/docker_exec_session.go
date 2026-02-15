@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/rcarmo/webterm-go-port/internal/terminalstate"
+	"github.com/rcarmo/webterm/internal/terminalstate"
 )
 
 type DockerExecSpec struct {
