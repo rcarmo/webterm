@@ -1,8 +1,24 @@
 /* Generic monospace font stack for terminal rendering.
 
 Prefers system monospace fonts, with optional Fira Code / Roboto Mono if available.
-We avoid external font fetching (e.g. Google Fonts) to keep local server self-contained.
+Uses a vendored FiraCode Nerd Font to keep local server self-contained.
 */
+
+@font-face {
+  font-family: "FiraCode Nerd Font";
+  src: url("/static/fonts/FiraCodeNerdFont-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "FiraMono Nerd Font";
+  src: url("/static/fonts/FiraCodeNerdFont-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
 
 :root {
   --webterm-mono: ui-monospace, "SFMono-Regular", "FiraCode Nerd Font",

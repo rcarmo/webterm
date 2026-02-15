@@ -20,6 +20,7 @@ This repository is the Go port of the original Python implementation, which is p
 - SSE activity updates for fast dashboard refresh
 - Mobile/touch support with virtual keyboard + draggable keybar
 - Theme/font controls for terminal rendering
+- Vendored Nerd Font assets with full glyph/icon support (no external font fetch required)
 
 ## Install
 
