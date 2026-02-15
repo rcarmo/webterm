@@ -229,6 +229,39 @@ func TestScreenshotCreatesSessionFromRequestedRoute(t *testing.T) {
 	}
 }
 
+func TestScreenshotSanitizedDownloadRemovesFontFaceURL(t *testing.T) {
+	_, httpServer, _ := newServerForTests(t, false)
+	resp, err := http.Get(httpServer.URL + "/screenshot.svg?route_key=shell&sanitize_font_urls=1&download=1")
+	if err != nil {
+		t.Fatalf("screenshot request error = %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%q", resp.StatusCode, string(body))
+	}
+	if disposition := resp.Header.Get("Content-Disposition"); !strings.Contains(disposition, "attachment;") || !strings.Contains(disposition, "shell-screenshot.svg") {
+		t.Fatalf("unexpected content disposition: %q", disposition)
+	}
+	if strings.Contains(string(body), `src:url("/static/fonts/FiraCodeNerdFont-Regular.ttf")`) {
+		t.Fatalf("expected sanitized svg without font-face url")
+	}
+}
+
+func TestDashboardIncludesContextMenuSanitizedDownload(t *testing.T) {
+	_, httpServer, _ := newServerForTests(t, true)
+	resp, err := http.Get(httpServer.URL + "/")
+	if err != nil {
+		t.Fatalf("dashboard request error = %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	text := string(body)
+	if !strings.Contains(text, "contextmenu") || !strings.Contains(text, "sanitize_font_urls=1&download=1") {
+		t.Fatalf("expected contextmenu sanitized download wiring in dashboard page")
+	}
+}
+
 func TestRootTerminalPageAndSparklineValidation(t *testing.T) {
 	_, httpServer, _ := newServerForTests(t, false)
 	resp, err := http.Get(httpServer.URL + "/?route_key=shell")

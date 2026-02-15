@@ -635,7 +635,41 @@ func etagMatches(ifNoneMatch, etag string) bool {
 	return false
 }
 
+func sanitizeSVGFontFaceURLs(svg string) string {
+	return strings.ReplaceAll(svg, `src:url("/static/fonts/FiraCodeNerdFont-Regular.ttf") format("truetype");`, "")
+}
+
+func sanitizeFilenameToken(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "webterm"
+	}
+	var b strings.Builder
+	b.Grow(len(trimmed))
+	for _, ch := range trimmed {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+			b.WriteRune(ch)
+		case ch >= 'A' && ch <= 'Z':
+			b.WriteRune(ch)
+		case ch >= '0' && ch <= '9':
+			b.WriteRune(ch)
+		case ch == '-' || ch == '_':
+			b.WriteRune(ch)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	cleaned := strings.Trim(b.String(), "-")
+	if cleaned == "" {
+		return "webterm"
+	}
+	return cleaned
+}
+
 func (s *LocalServer) handleScreenshot(w http.ResponseWriter, r *http.Request) {
+	sanitizeFontURLs := r.URL.Query().Get("sanitize_font_urls") == "1"
+	download := r.URL.Query().Get("download") == "1"
 	routeKey := r.URL.Query().Get("route_key")
 	routeKey, session, ok := s.chooseRouteForScreenshot(routeKey)
 	if !ok && routeKey != "" {
@@ -660,23 +694,43 @@ func (s *LocalServer) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	prepareSVG := func(rawSVG string) (string, string) {
+		if sanitizeFontURLs {
+			rawSVG = sanitizeSVGFontFaceURLs(rawSVG)
+		}
+		hash := sha1.Sum([]byte(rawSVG))
+		return rawSVG, fmt.Sprintf(`"%x"`, hash[:])
+	}
+	writeNotModified := func(etag string) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("ETag", etag)
+		w.WriteHeader(http.StatusNotModified)
+	}
+	writeSVG := func(svg, etag string) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Content-Type", "image/svg+xml")
+		if download {
+			filename := sanitizeFilenameToken(routeKey) + "-screenshot.svg"
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		}
+		_, _ = io.WriteString(w, svg)
+	}
+	useConditional := !download
+
 	s.mu.RLock()
 	cached, hasCached := s.screenshotCache[routeKey]
 	lastActivity := s.routeLastActivity[routeKey]
 	s.mu.RUnlock()
 	if hasCached && time.Since(cached.when) < s.screenshotTTL(routeKey) {
-		if etagMatches(r.Header.Get("If-None-Match"), cached.etag) {
+		svg, etag := prepareSVG(cached.svg)
+		if useConditional && etagMatches(r.Header.Get("If-None-Match"), etag) {
 			if !lastActivity.After(cached.when) {
-				w.Header().Set("Cache-Control", "no-cache")
-				w.Header().Set("ETag", cached.etag)
-				w.WriteHeader(http.StatusNotModified)
+				writeNotModified(etag)
 				return
 			}
 		} else {
-			w.Header().Set("Cache-Control", "no-cache")
-			w.Header().Set("ETag", cached.etag)
-			w.Header().Set("Content-Type", "image/svg+xml")
-			_, _ = io.WriteString(w, cached.svg)
+			writeSVG(svg, etag)
 			return
 		}
 	}
@@ -687,16 +741,12 @@ func (s *LocalServer) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 
 	snapshot := session.GetScreenSnapshot()
 	if hasCached && !snapshot.HasChanges {
-		if etagMatches(r.Header.Get("If-None-Match"), cached.etag) {
-			w.Header().Set("Cache-Control", "no-cache")
-			w.Header().Set("ETag", cached.etag)
-			w.WriteHeader(http.StatusNotModified)
+		svg, etag := prepareSVG(cached.svg)
+		if useConditional && etagMatches(r.Header.Get("If-None-Match"), etag) {
+			writeNotModified(etag)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("ETag", cached.etag)
-		w.Header().Set("Content-Type", "image/svg+xml")
-		_, _ = io.WriteString(w, cached.svg)
+		writeSVG(svg, etag)
 		return
 	}
 
@@ -724,17 +774,12 @@ func (s *LocalServer) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.screenshotCache[routeKey] = screenshotCacheEntry{when: time.Now(), svg: svg, etag: etag}
 	s.mu.Unlock()
-	if etagMatches(r.Header.Get("If-None-Match"), etag) {
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("ETag", etag)
-		w.WriteHeader(http.StatusNotModified)
+	responseSVG, responseETag := prepareSVG(svg)
+	if useConditional && etagMatches(r.Header.Get("If-None-Match"), responseETag) {
+		writeNotModified(responseETag)
 		return
 	}
-
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("ETag", etag)
-	w.Header().Set("Content-Type", "image/svg+xml")
-	_, _ = io.WriteString(w, svg)
+	writeSVG(responseSVG, responseETag)
 }
 
 func (s *LocalServer) handleCPUSparkline(w http.ResponseWriter, r *http.Request) {
@@ -957,6 +1002,16 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		const grid = document.getElementById('grid');
 		const subtitle = document.getElementById('subtitle');
 
+		function downloadSanitizedScreenshot(slug) {
+			if (!slug) return;
+			const link = document.createElement('a');
+			link.href = '/screenshot.svg?route_key=' + encodeURIComponent(slug) + '&sanitize_font_urls=1&download=1&_t=' + Date.now();
+			link.download = slug + '-screenshot.svg';
+			document.body.appendChild(link);
+			link.click();
+			link.remove();
+		}
+
 		function makeTile(tile) {
 			const card = document.createElement('div');
 			card.className = 'tile';
@@ -989,6 +1044,10 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 			card.appendChild(body);
 			card.appendChild(meta);
 			card.onclick = () => openTile(tile);
+			card.addEventListener('contextmenu', (event) => {
+				event.preventDefault();
+				downloadSanitizedScreenshot(tile.slug);
+			});
 			card.img = img;
 			return card;
 		}
