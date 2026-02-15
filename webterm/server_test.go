@@ -2,6 +2,7 @@ package webterm
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,26 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+type failingSSEWriter struct {
+	header   http.Header
+	writeErr error
+}
+
+func (w *failingSSEWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *failingSSEWriter) WriteHeader(int) {}
+
+func (w *failingSSEWriter) Write([]byte) (int, error) {
+	return 0, w.writeErr
+}
+
+func (w *failingSSEWriter) Flush() {}
 
 func newServerForTests(t *testing.T, withLanding bool) (*LocalServer, *httptest.Server, *syncSessionMap) {
 	t.Helper()
@@ -265,5 +286,62 @@ func TestMarkRouteActivityBroadcastsWithoutBlockingGlobalLock(t *testing.T) {
 		}
 	default:
 		t.Fatalf("expected route activity broadcast")
+	}
+}
+
+func TestGzipMiddlewareSkipsEventsPath(t *testing.T) {
+	server := NewLocalServer(Config{}, ServerOptions{})
+	handler := server.gzipMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/events", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if got := rr.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("expected no gzip encoding for SSE path, got %q", got)
+	}
+	if rr.Body.String() != "ok" {
+		t.Fatalf("unexpected body: %q", rr.Body.String())
+	}
+}
+
+func TestHandleEventsReturnsOnWriteError(t *testing.T) {
+	server := NewLocalServer(Config{}, ServerOptions{})
+	req := httptest.NewRequest(http.MethodGet, "/events", nil)
+	writer := &failingSSEWriter{writeErr: errors.New("broken pipe")}
+	done := make(chan struct{})
+	go func() {
+		server.handleEvents(writer, req)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for {
+		server.mu.RLock()
+		count := len(server.sseSubscribers)
+		server.mu.RUnlock()
+		if count == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected SSE subscriber to be registered")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	server.markRouteActivity("route-a")
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("handleEvents did not exit after write error")
+	}
+
+	server.mu.RLock()
+	count := len(server.sseSubscribers)
+	server.mu.RUnlock()
+	if count != 0 {
+		t.Fatalf("expected SSE subscriber cleanup after write error, got %d", count)
 	}
 }

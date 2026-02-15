@@ -25,6 +25,8 @@ import (
 const (
 	wsSendQueueMax         = 256
 	wsSendTimeout          = 2 * time.Second
+	wsReadTimeout          = 90 * time.Second
+	wsPingPeriod           = 30 * time.Second
 	stdinWriteTimeout      = 2 * time.Second
 	screenshotCacheSeconds = 300 * time.Millisecond
 	maxScreenshotCacheTTL  = 20 * time.Second
@@ -344,10 +346,27 @@ func (s *LocalServer) stopWSClient(routeKey string) {
 
 func (s *LocalServer) wsSender(client *wsClient) {
 	defer close(client.done)
-	for outbound := range client.send {
-		_ = client.conn.SetWriteDeadline(time.Now().Add(wsSendTimeout))
-		if err := client.conn.WriteMessage(outbound.messageType, outbound.payload); err != nil {
-			return
+	pingTicker := time.NewTicker(wsPingPeriod)
+	defer pingTicker.Stop()
+	for {
+		select {
+		case outbound, ok := <-client.send:
+			if !ok {
+				return
+			}
+			_ = client.conn.SetWriteDeadline(time.Now().Add(wsSendTimeout))
+			if err := client.conn.WriteMessage(outbound.messageType, outbound.payload); err != nil {
+				client.closed.Store(true)
+				_ = client.conn.Close()
+				return
+			}
+		case <-pingTicker.C:
+			deadline := time.Now().Add(wsSendTimeout)
+			if err := client.conn.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+				client.closed.Store(true)
+				_ = client.conn.Close()
+				return
+			}
 		}
 	}
 }
@@ -414,6 +433,10 @@ func (s *LocalServer) loggingMiddleware(next http.Handler) http.Handler {
 
 func (s *LocalServer) gzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/events" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			next.ServeHTTP(w, r)
 			return
@@ -490,8 +513,10 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_ = conn.SetReadDeadline(time.Time{})
-	conn.SetPongHandler(func(string) error { return nil })
+	_ = conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
+	})
 
 	for {
 		messageType, payload, err := conn.ReadMessage()
@@ -741,6 +766,7 @@ func (s *LocalServer) handleEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -764,10 +790,14 @@ func (s *LocalServer) handleEvents(w http.ResponseWriter, r *http.Request) {
 		case <-notify:
 			return
 		case routeKey := <-channel:
-			_, _ = fmt.Fprintf(w, "event: activity\ndata: %s\n\n", routeKey)
+			if _, err := fmt.Fprintf(w, "event: activity\ndata: %s\n\n", routeKey); err != nil {
+				return
+			}
 			flusher.Flush()
 		case <-ticker.C:
-			_, _ = io.WriteString(w, ": keepalive\n\n")
+			if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}
