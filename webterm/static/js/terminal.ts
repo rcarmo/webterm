@@ -542,11 +542,17 @@ class WebTerminal {
   private terminal: Terminal;
   private fitAddon: FitAddon;
   private socket: WebSocket | null = null;
+  private readonly textDecoder = new TextDecoder();
   private element: HTMLElement;
   private wsUrl: string;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
+  private heartbeatIntervalMs = 15000;
+  private stallTimeoutMs = 45000;
+  private heartbeatTimer: number | undefined;
+  private lastMessageAt = 0;
+  private lastPongAt = 0;
   private messageQueue: [string, unknown][] = [];
   private lastValidSize: { cols: number; rows: number } | null = null;
   private mobileInput: HTMLTextAreaElement | null = null;
@@ -1428,6 +1434,7 @@ class WebTerminal {
 
     this.socket.addEventListener("open", () => {
       this.reconnectAttempts = 0;
+      this.startHeartbeatWatchdog();
       this.element.classList.add("-connected");
       this.element.classList.remove("-disconnected");
 
@@ -1447,6 +1454,7 @@ class WebTerminal {
     });
 
     this.socket.addEventListener("close", () => {
+      this.stopHeartbeatWatchdog();
       this.element.classList.remove("-connected");
       this.element.classList.add("-disconnected");
       this.scheduleReconnect();
@@ -1462,14 +1470,7 @@ class WebTerminal {
   }
 
   /** Handle incoming WebSocket message */
-  private handleMessage(data: string | ArrayBuffer): void {
-    if (data instanceof ArrayBuffer) {
-      // Binary data - write directly to terminal
-      const text = new TextDecoder().decode(data);
-      this.terminal.write(text);
-      return;
-    }
-
+  private handleTextMessage(data: string): void {
     // JSON message
     try {
       const envelope = JSON.parse(data) as [string, unknown];
@@ -1480,7 +1481,7 @@ class WebTerminal {
           this.terminal.write(payload as string);
           break;
         case "pong":
-          // Keep-alive response - nothing to do
+          this.lastPongAt = Date.now();
           break;
         default:
           console.debug("Unknown message type:", type);
@@ -1488,6 +1489,54 @@ class WebTerminal {
     } catch {
       // Not JSON - treat as raw text
       this.terminal.write(data);
+    }
+  }
+
+  /** Handle incoming WebSocket message */
+  private handleMessage(data: string | ArrayBuffer | Blob): void {
+    this.lastMessageAt = Date.now();
+    if (data instanceof ArrayBuffer) {
+      // Binary data - write directly to terminal
+      const text = this.textDecoder.decode(data);
+      this.terminal.write(text);
+      return;
+    }
+    if (data instanceof Blob) {
+      void data.text().then((text) => {
+        this.lastMessageAt = Date.now();
+        this.handleTextMessage(text);
+      }).catch(() => {
+        // Ignore blob decode failures; reconnect watchdog will recover if needed.
+      });
+      return;
+    }
+    this.handleTextMessage(data);
+  }
+
+  private startHeartbeatWatchdog(): void {
+    this.stopHeartbeatWatchdog();
+    const now = Date.now();
+    this.lastMessageAt = now;
+    this.lastPongAt = now;
+    this.heartbeatTimer = window.setInterval(() => {
+      if (this.socket?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      const now = Date.now();
+      const lastInbound = Math.max(this.lastMessageAt, this.lastPongAt);
+      if (now - lastInbound > this.stallTimeoutMs) {
+        console.warn("WebSocket inbound stream stalled; reconnecting");
+        this.socket.close();
+        return;
+      }
+      this.send(["ping", String(now)]);
+    }, this.heartbeatIntervalMs);
+  }
+
+  private stopHeartbeatWatchdog(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
     }
   }
 
@@ -1537,6 +1586,7 @@ class WebTerminal {
 
   /** Clean up resources */
   dispose(): void {
+    this.stopHeartbeatWatchdog();
     this.socket?.close();
     if (this.mobileInput) {
       this.mobileInput.remove();
