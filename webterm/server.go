@@ -322,15 +322,8 @@ func (s *LocalServer) enqueueWSFrame(routeKey string, messageType int, data []by
 	select {
 	case client.send <- frame:
 	default:
-		// Drop oldest, try again
-		select {
-		case <-client.send:
-		default:
-		}
-		select {
-		case client.send <- frame:
-		default:
-		}
+		log.Printf("websocket send queue saturated route=%s: disconnecting slow client", routeKey)
+		s.stopWSClient(routeKey, client)
 	}
 }
 
@@ -526,6 +519,19 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
 	})
+	type stdinWrite struct {
+		session Session
+		data    string
+	}
+	stdinQueue := make(chan stdinWrite, wsSendQueueMax)
+	defer close(stdinQueue)
+	go func() {
+		for write := range stdinQueue {
+			if !write.session.SendBytes([]byte(write.data)) {
+				log.Printf("stdin write failed route=%s remote=%s", routeKey, r.RemoteAddr)
+			}
+		}
+	}()
 
 	for {
 		messageType, payload, err := conn.ReadMessage()
@@ -553,14 +559,12 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				if len(envelope) > 1 {
 					data, _ = envelope[1].(string)
 				}
-				done := make(chan struct{})
-				go func() {
-					defer close(done)
-					_ = session.SendBytes([]byte(data))
-				}()
 				select {
-				case <-done:
+				case stdinQueue <- stdinWrite{session: session, data: data}:
 				case <-time.After(stdinWriteTimeout):
+					log.Printf("stdin queue saturated route=%s remote=%s: disconnecting client", routeKey, r.RemoteAddr)
+					sendJSON([]any{"error", "Input backlog detected"})
+					return
 				}
 			}
 		case "resize":

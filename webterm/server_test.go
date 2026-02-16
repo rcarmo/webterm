@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/rcarmo/webterm/internal/terminalstate"
 )
 
 type failingSSEWriter struct {
@@ -60,6 +61,43 @@ func newServerForTests(t *testing.T, withLanding bool) (*LocalServer, *httptest.
 type syncSessionMap struct {
 	mu sync.Mutex
 	m  map[string]*fakeSession
+}
+
+type blockingSession struct {
+	mu      sync.Mutex
+	running bool
+	blockCh <-chan struct{}
+}
+
+func newBlockingSession(blockCh <-chan struct{}) *blockingSession {
+	return &blockingSession{running: true, blockCh: blockCh}
+}
+
+func (b *blockingSession) Open(int, int) error { return nil }
+func (b *blockingSession) Start(SessionConnector) error { return nil }
+func (b *blockingSession) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.running = false
+	return nil
+}
+func (b *blockingSession) Wait() error                        { return nil }
+func (b *blockingSession) SetTerminalSize(int, int) error     { return nil }
+func (b *blockingSession) SendMeta(map[string]any) bool       { return true }
+func (b *blockingSession) GetReplayBuffer() []byte            { return nil }
+func (b *blockingSession) ForceRedraw() error                 { return nil }
+func (b *blockingSession) UpdateConnector(SessionConnector)   {}
+func (b *blockingSession) GetScreenSnapshot() terminalstate.Snapshot {
+	return terminalstate.Snapshot{Width: 80, Height: 24, Buffer: make([][]terminalstate.Cell, 24)}
+}
+func (b *blockingSession) SendBytes([]byte) bool {
+	<-b.blockCh
+	return true
+}
+func (b *blockingSession) IsRunning() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.running
 }
 
 func TestHealthAndTilesEndpoints(t *testing.T) {
@@ -275,6 +313,71 @@ func TestStaleSessionConnectorCloseDoesNotDropReassignedRouteClient(t *testing.T
 	}
 	if pong[0] != "pong" || pong[1] != "route-still-open" {
 		t.Fatalf("unexpected pong payload: %v", pong)
+	}
+}
+
+func TestEnqueueWSFrameQueueSaturationDisconnectsSlowClient(t *testing.T) {
+	server := NewLocalServer(Config{}, ServerOptions{})
+	client := &wsClient{
+		routeKey: "shell",
+		send:     make(chan wsOutbound, 1),
+		done:     make(chan struct{}),
+	}
+	client.send <- wsOutbound{messageType: websocket.BinaryMessage, payload: []byte("old")}
+	close(client.done)
+
+	server.mu.Lock()
+	server.wsClients["shell"] = client
+	server.mu.Unlock()
+
+	server.enqueueWSFrame("shell", websocket.BinaryMessage, []byte("new"))
+
+	if !client.closed.Load() {
+		t.Fatalf("expected saturated client to be marked closed")
+	}
+	server.mu.RLock()
+	_, exists := server.wsClients["shell"]
+	server.mu.RUnlock()
+	if exists {
+		t.Fatalf("expected saturated client to be removed from wsClients")
+	}
+}
+
+func TestWebSocketDisconnectsOnStdinBacklog(t *testing.T) {
+	blockCh := make(chan struct{})
+	t.Cleanup(func() { close(blockCh) })
+	config := Config{
+		Apps: []App{{Name: "Shell", Slug: "shell", Command: "/bin/sh", Terminal: true}},
+	}
+	server := NewLocalServer(config, ServerOptions{})
+	server.sessionManager.SetSessionFactory(func(app App, sessionID string) Session {
+		return newBlockingSession(blockCh)
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws/shell"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("ws dial error = %v", err)
+	}
+	defer conn.Close()
+	if err := conn.WriteJSON([]any{"resize", map[string]any{"width": 80, "height": 24}}); err != nil {
+		t.Fatalf("write resize: %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	for i := 0; i < wsSendQueueMax+32; i++ {
+		if err := conn.WriteJSON([]any{"stdin", "x"}); err != nil {
+			break
+		}
+	}
+
+	_ = conn.SetReadDeadline(time.Now().Add(6 * time.Second))
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			return
+		}
 	}
 }
 
