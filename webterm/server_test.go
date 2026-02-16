@@ -182,6 +182,102 @@ func TestWebSocketReplayOnReconnect(t *testing.T) {
 	}
 }
 
+func TestWebSocketOldConnectionCloseDoesNotDropNewClient(t *testing.T) {
+	_, httpServer, _ := newServerForTests(t, false)
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws/shell"
+
+	conn1, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("first dial error = %v", err)
+	}
+	if err := conn1.WriteJSON([]any{"resize", map[string]any{"width": 80, "height": 24}}); err != nil {
+		t.Fatalf("resize write: %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	conn2, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("second dial error = %v", err)
+	}
+	defer conn2.Close()
+
+	_ = conn1.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	if err := conn2.WriteJSON([]any{"ping", "still-open"}); err != nil {
+		t.Fatalf("conn2 write ping after conn1 close: %v", err)
+	}
+	_ = conn2.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, payload, err := conn2.ReadMessage()
+	if err != nil {
+		t.Fatalf("conn2 read pong after conn1 close: %v", err)
+	}
+	var pong []any
+	if err := json.Unmarshal(payload, &pong); err != nil {
+		t.Fatalf("decode pong: %v", err)
+	}
+	if pong[0] != "pong" || pong[1] != "still-open" {
+		t.Fatalf("unexpected pong payload: %v", pong)
+	}
+}
+
+func TestStaleSessionConnectorCloseDoesNotDropReassignedRouteClient(t *testing.T) {
+	server, httpServer, _ := newServerForTests(t, false)
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws/shell"
+
+	conn1, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("first dial error = %v", err)
+	}
+	defer conn1.Close()
+	if err := conn1.WriteJSON([]any{"resize", map[string]any{"width": 80, "height": 24}}); err != nil {
+		t.Fatalf("resize write: %v", err)
+	}
+	var sessionID string
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if sid, ok := server.sessionManager.GetSessionIDByRouteKey("shell"); ok {
+			sessionID = sid
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if sessionID == "" {
+		t.Fatalf("expected initial session id")
+	}
+
+	conn2, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("second dial error = %v", err)
+	}
+	defer conn2.Close()
+
+	// Simulate route reassignment before stale connector close callback runs.
+	server.sessionManager.OnSessionEnd(sessionID)
+	if _, err := server.sessionManager.NewSession("shell", "replacement-session", "shell", 80, 24); err != nil {
+		t.Fatalf("replacement session create failed: %v", err)
+	}
+
+	staleConnector := &localClientConnector{server: server, sessionID: sessionID, routeKey: "shell"}
+	staleConnector.OnClose()
+
+	if err := conn2.WriteJSON([]any{"ping", "route-still-open"}); err != nil {
+		t.Fatalf("conn2 write ping after stale close: %v", err)
+	}
+	_ = conn2.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, payload, err := conn2.ReadMessage()
+	if err != nil {
+		t.Fatalf("conn2 read pong after stale close: %v", err)
+	}
+	var pong []any
+	if err := json.Unmarshal(payload, &pong); err != nil {
+		t.Fatalf("decode pong: %v", err)
+	}
+	if pong[0] != "pong" || pong[1] != "route-still-open" {
+		t.Fatalf("unexpected pong payload: %v", pong)
+	}
+}
+
 func TestScreenshotAndETag(t *testing.T) {
 	server, httpServer, _ := newServerForTests(t, false)
 	if _, err := server.sessionManager.NewSession("shell", "sid", "shell", 80, 24); err != nil {

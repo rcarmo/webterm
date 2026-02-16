@@ -207,7 +207,10 @@ func (c *localClientConnector) OnMeta(meta map[string]any) {
 
 func (c *localClientConnector) OnClose() {
 	c.server.sessionManager.OnSessionEnd(c.sessionID)
-	c.server.stopWSClient(c.routeKey)
+	if activeSessionID, ok := c.server.sessionManager.GetSessionIDByRouteKey(c.routeKey); ok && activeSessionID != c.sessionID {
+		return
+	}
+	c.server.stopWSClient(c.routeKey, nil)
 }
 
 func NewLocalServer(config Config, options ServerOptions) *LocalServer {
@@ -331,15 +334,21 @@ func (s *LocalServer) enqueueWSFrame(routeKey string, messageType int, data []by
 	}
 }
 
-func (s *LocalServer) stopWSClient(routeKey string) {
+func (s *LocalServer) stopWSClient(routeKey string, expected *wsClient) {
 	s.mu.Lock()
 	client := s.wsClients[routeKey]
+	if expected != nil && client != expected {
+		s.mu.Unlock()
+		return
+	}
 	delete(s.wsClients, routeKey)
 	s.mu.Unlock()
 	if client == nil {
 		return
 	}
-	client.closed.Store(true)
+	if client.closed.Swap(true) {
+		return
+	}
 	close(client.send)
 	<-client.done
 }
@@ -480,7 +489,7 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.wsClients[routeKey] = client
 	s.mu.Unlock()
 	go s.wsSender(client)
-	defer s.stopWSClient(routeKey)
+	defer s.stopWSClient(routeKey, client)
 
 	// Helper to send JSON through the send channel (avoids concurrent conn writes)
 	sendJSON := func(v any) {
@@ -526,6 +535,7 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		_ = conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
 		if messageType != websocket.TextMessage {
 			continue
 		}
