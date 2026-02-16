@@ -2,11 +2,11 @@
 
 ![Icon](docs/icon-256.png)
 
-`webterm` serves terminal sessions over HTTP/WebSocket, with a dashboard mode for multiple sessions and live-updating terminal tiles.
+`webterm` serves terminal sessions over HTTP/WebSocket, with a dashboard mode for multiple sessions and live-updating terminal tiles that is perfect for running multiple AI coding agents in [`agentbox`](https://github.com/rcarmo/agentbox).
 
 This repository is the Go port of the original Python implementation, which is preserved in the `python` branch.
 
-<video src="https://github.com/rcarmo/webterm/raw/refs/heads/main/docs/demo.mp4" controls playsinline muted loop></video>
+https://github.com/user-attachments/assets/62c52183-83a3-4fb5-97b1-ed001de4f53a
 
 ## Features
 
