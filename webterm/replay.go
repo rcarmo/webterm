@@ -2,7 +2,7 @@ package webterm
 
 import "sync"
 
-const replayBufferSize = 256 * 1024
+const replayBufferSize = 128 * 1024
 
 type ReplayBuffer struct {
 	mu    sync.Mutex

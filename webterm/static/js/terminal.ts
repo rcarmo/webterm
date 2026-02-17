@@ -26,6 +26,9 @@ async function getSharedGhostty(): Promise<Ghostty> {
   return sharedGhostty;
 }
 
+/** Shared TextDecoder (stateless for UTF-8, safe to share) */
+const sharedTextDecoder = new TextDecoder();
+
 /** Default font stack - prefers system monospace, falls back through programming fonts */
 const DEFAULT_FONT_FAMILY =
   'ui-monospace, "SFMono-Regular", "FiraCode Nerd Font", "FiraMono Nerd Font", ' +
@@ -660,7 +663,6 @@ class WebTerminal {
   private terminal: Terminal;
   private fitAddon: FitAddon;
   private socket: WebSocket | null = null;
-  private readonly textDecoder = new TextDecoder();
   private element: HTMLElement;
   private wsUrl: string;
   private reconnectAttempts = 0;
@@ -741,10 +743,11 @@ class WebTerminal {
     const fontFamily = config.fontFamily?.trim() || DEFAULT_FONT_FAMILY;
     const fontSize = config.fontSize ?? 16;
 
+    const defaultScrollback = isMobileDevice() ? 200 : 1000;
     const options: ITerminalOptions = {
       fontFamily,
       fontSize,
-      scrollback: config.scrollback ?? 1000,
+      scrollback: config.scrollback ?? defaultScrollback,
       cursorBlink: true,
       cursorStyle: "block",
       theme: themeToUse,
@@ -905,7 +908,12 @@ class WebTerminal {
 
     // Focus terminal when returning to the tab
     this.addTrackedListener(document, "visibilitychange", () => {
-      if (!document.hidden) {
+      if (document.hidden) {
+        this.stopHeartbeatWatchdog();
+      } else {
+        if (this.socket?.readyState === WebSocket.OPEN) {
+          this.startHeartbeatWatchdog();
+        }
         restoreFocus();
       }
     });
@@ -1634,9 +1642,8 @@ class WebTerminal {
   private handleMessage(data: string | ArrayBuffer | Blob): void {
     this.lastMessageAt = Date.now();
     if (data instanceof ArrayBuffer) {
-      // Binary data - write directly to terminal
-      const text = this.textDecoder.decode(data);
-      this.terminal.write(text);
+      // Binary data - write directly to terminal as Uint8Array (avoids string allocation)
+      this.terminal.write(new Uint8Array(data));
       return;
     }
     if (data instanceof Blob) {

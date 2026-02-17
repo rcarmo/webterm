@@ -1270,7 +1270,6 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 				return;
 			}
 			screenshotRequestInFlight = true;
-			const img = card.img;
 			const url = '/screenshot.svg?route_key=' + encodeURIComponent(slug);
 			const controller = new AbortController();
 			const timeout = setTimeout(() => controller.abort(), 5000);
@@ -1290,14 +1289,13 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 				})
 				.then((blob) => {
 					if (!blob) return;
+					const currentCard = cardsBySlug[slug];
+					if (!currentCard || !currentCard.img) return;
 					const previous = activeObjectURLBySlug[slug];
+					if (previous) URL.revokeObjectURL(previous);
 					const objectURL = URL.createObjectURL(blob);
 					activeObjectURLBySlug[slug] = objectURL;
-					img.src = objectURL;
-					thumbnailCache[slug] = { src: objectURL, updatedAt: Date.now() };
-					if (previous) {
-						URL.revokeObjectURL(previous);
-					}
+					currentCard.img.src = objectURL;
 				})
 				.catch(() => {})
 				.finally(() => {
