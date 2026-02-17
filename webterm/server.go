@@ -28,8 +28,9 @@ const (
 	wsReadTimeout          = 90 * time.Second
 	wsPingPeriod           = 30 * time.Second
 	stdinWriteTimeout      = 2 * time.Second
-	screenshotCacheSeconds = 300 * time.Millisecond
-	maxScreenshotCacheTTL  = 20 * time.Second
+	screenshotCacheSeconds  = 300 * time.Millisecond
+	maxScreenshotCacheTTL   = 20 * time.Second
+	screenshotEvictInterval = 60 * time.Second
 )
 
 type ServerOptions struct {
@@ -1336,13 +1337,22 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 			} catch (_) {}
 		}
 
+		const activeSparklineURLBySlug = {};
 		function refreshSparklines() {
 			if (!composeMode) return;
 			for (const tile of tiles) {
 				const card = cardsBySlug[tile.slug];
-				if (card && card.sparkline) {
-					card.sparkline.src = '/cpu-sparkline.svg?container=' + encodeURIComponent(tile.slug) + '&width=80&height=16&_t=' + Date.now();
-				}
+				if (!card || !card.sparkline) continue;
+				const slug = tile.slug;
+				const url = '/cpu-sparkline.svg?container=' + encodeURIComponent(slug) + '&width=80&height=16&_t=' + Date.now();
+				fetch(url).then(r => r.ok ? r.blob() : null).then(blob => {
+					if (!blob) return;
+					const prev = activeSparklineURLBySlug[slug];
+					const objectURL = URL.createObjectURL(blob);
+					activeSparklineURLBySlug[slug] = objectURL;
+					if (card.sparkline) card.sparkline.src = objectURL;
+					if (prev) URL.revokeObjectURL(prev);
+				}).catch(() => {});
 			}
 		}
 
@@ -1378,6 +1388,20 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 			for (const key in activeObjectURLBySlug) {
 				URL.revokeObjectURL(activeObjectURLBySlug[key]);
 				delete activeObjectURLBySlug[key];
+			}
+			for (const key in activeSparklineURLBySlug) {
+				URL.revokeObjectURL(activeSparklineURLBySlug[key]);
+				delete activeSparklineURLBySlug[key];
+			}
+			for (const key in thumbnailCache) {
+				delete thumbnailCache[key];
+			}
+			for (const key in pendingRefresh) {
+				clearTimeout(pendingRefresh[key]);
+				delete pendingRefresh[key];
+			}
+			for (const key in etagBySlug) {
+				delete etagBySlug[key];
 			}
 			if (tiles.length === 0) {
 				grid.innerHTML = '<div class="empty">No containers found. Start containers with the webterm-command label.</div>';
@@ -1581,8 +1605,30 @@ func (s *LocalServer) Handler() http.Handler {
 	return s.loggingMiddleware(s.gzipMiddleware(mux))
 }
 
+// evictStaleScreenshots periodically removes screenshot cache entries
+// older than maxScreenshotCacheTTL to prevent unbounded memory growth.
+func (s *LocalServer) evictStaleScreenshots(ctx context.Context) {
+	ticker := time.NewTicker(screenshotEvictInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			for key, entry := range s.screenshotCache {
+				if time.Since(entry.when) > maxScreenshotCacheTTL {
+					delete(s.screenshotCache, key)
+				}
+			}
+			s.mu.Unlock()
+		}
+	}
+}
+
 func (s *LocalServer) Run(ctx context.Context) error {
 	s.setupDockerFeatures()
+	go s.evictStaleScreenshots(ctx)
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", s.host, s.port),
 		Handler: s.Handler(),
