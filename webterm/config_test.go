@@ -30,6 +30,35 @@ func TestLoadLandingYAML(t *testing.T) {
 	}
 }
 
+func TestLoadLandingYAMLWebtermThemeKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "landing.yaml")
+	content := `
+- name: Pro
+  command: /bin/sh
+  webterm-theme: monokai-pro
+- name: Classic
+  command: /bin/sh
+  theme: dracula
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	apps, err := LoadLandingYAML(path)
+	if err != nil {
+		t.Fatalf("LoadLandingYAML() error = %v", err)
+	}
+	if len(apps) != 2 {
+		t.Fatalf("expected 2 apps, got %d", len(apps))
+	}
+	if apps[0].Theme != "monokai-pro" {
+		t.Fatalf("expected monokai-pro from webterm-theme key, got %q", apps[0].Theme)
+	}
+	if apps[1].Theme != "dracula" {
+		t.Fatalf("expected dracula from theme key, got %q", apps[1].Theme)
+	}
+}
+
 func TestLoadComposeManifestReadsLabels(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "compose.yaml")

@@ -61,7 +61,7 @@ func LoadLandingYAML(manifestPath string) ([]App, error) {
 			Path:     path,
 			Color:    asString(entry["color"]),
 			Terminal: terminal,
-			Theme:    asString(entry["theme"]),
+			Theme:    firstNonEmpty(asString(entry["theme"]), asString(entry["webterm-theme"])),
 		})
 	}
 	return apps, nil
@@ -141,6 +141,15 @@ func asString(value any) string {
 	}
 	if s, ok := value.(string); ok {
 		return os.ExpandEnv(s)
+	}
+	return ""
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
 	}
 	return ""
 }
