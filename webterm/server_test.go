@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -256,6 +257,47 @@ func TestWebSocketOldConnectionCloseDoesNotDropNewClient(t *testing.T) {
 	}
 	if pong[0] != "pong" || pong[1] != "still-open" {
 		t.Fatalf("unexpected pong payload: %v", pong)
+	}
+}
+
+func TestStopWSClientClosesWebSocketConnection(t *testing.T) {
+	server, httpServer, _ := newServerForTests(t, false)
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws/shell"
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("ws dial error = %v", err)
+	}
+	defer conn.Close()
+	if err := conn.WriteJSON([]any{"resize", map[string]any{"width": 80, "height": 24}}); err != nil {
+		t.Fatalf("resize write: %v", err)
+	}
+
+	var client *wsClient
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		server.mu.RLock()
+		client = server.wsClients["shell"]
+		server.mu.RUnlock()
+		if client != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if client == nil {
+		t.Fatalf("expected websocket client to be registered")
+	}
+
+	server.stopWSClient("shell", client)
+
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, _, err = conn.ReadMessage()
+	if err == nil {
+		t.Fatalf("expected websocket close after stopWSClient")
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		t.Fatalf("expected immediate disconnect, got timeout: %v", err)
 	}
 }
 

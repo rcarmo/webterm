@@ -343,6 +343,9 @@ func (s *LocalServer) stopWSClient(routeKey string, expected *wsClient) {
 		return
 	}
 	close(client.send)
+	if client.conn != nil {
+		_ = client.conn.Close()
+	}
 	<-client.done
 }
 
