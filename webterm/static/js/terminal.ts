@@ -8,6 +8,11 @@
 
 import { Terminal, FitAddon, Ghostty, type ITerminalOptions, type ITheme } from "ghostty-web";
 
+/** Maximum queued messages before oldest are dropped */
+const MAX_MESSAGE_QUEUE_SIZE = 1000;
+/** How often to run periodic resource cleanup (ms) */
+const RESOURCE_CLEANUP_INTERVAL_MS = 30_000;
+
 /** Default font stack - prefers system monospace, falls back through programming fonts */
 const DEFAULT_FONT_FAMILY =
   'ui-monospace, "SFMono-Regular", "FiraCode Nerd Font", "FiraMono Nerd Font", ' +
@@ -592,6 +597,7 @@ class WebTerminal {
   private pendingFn = false;
   private fontFamily: string;
   private fontSize: number;
+  private cleanupTimer: number | undefined;
 
   private constructor(
     container: HTMLElement,
@@ -780,6 +786,9 @@ class WebTerminal {
     if (isMobileDevice()) {
       this.setupMobileKeybar();
     }
+
+    // Start periodic resource cleanup
+    this.startResourceCleanup();
 
     // Connect WebSocket
     this.connect();
@@ -1565,8 +1574,36 @@ class WebTerminal {
     }
   }
 
+  /** Start periodic resource cleanup to prevent memory leaks */
+  private startResourceCleanup(): void {
+    this.cleanupTimer = window.setInterval(() => {
+      this.trimMessageQueue();
+    }, RESOURCE_CLEANUP_INTERVAL_MS);
+  }
+
+  /** Stop periodic resource cleanup */
+  private stopResourceCleanup(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = undefined;
+    }
+  }
+
+  /** Drop oldest messages when the queue exceeds the cap */
+  private trimMessageQueue(): void {
+    if (this.messageQueue.length > MAX_MESSAGE_QUEUE_SIZE) {
+      const dropped = this.messageQueue.length - MAX_MESSAGE_QUEUE_SIZE;
+      this.messageQueue = this.messageQueue.slice(-MAX_MESSAGE_QUEUE_SIZE);
+      console.warn(`[webterm] Trimmed ${dropped} stale messages from queue`);
+    }
+  }
+
   /** Send message to server with queueing support */
   private send(message: [string, unknown]): void {
+    if (this.messageQueue.length >= MAX_MESSAGE_QUEUE_SIZE) {
+      this.messageQueue = this.messageQueue.slice(-Math.floor(MAX_MESSAGE_QUEUE_SIZE / 2));
+      console.warn("[webterm] Message queue overflow; trimmed old messages");
+    }
     this.messageQueue.push(message);
     this.processMessageQueue();
   }
@@ -1611,6 +1648,7 @@ class WebTerminal {
 
   /** Clean up resources */
   dispose(): void {
+    this.stopResourceCleanup();
     this.stopHeartbeatWatchdog();
     this.socket?.close();
     if (this.mobileInput) {
@@ -1642,6 +1680,17 @@ class WebTerminal {
 
 // Store instances for potential external access
 const instances: Map<HTMLElement, WebTerminal> = new Map();
+
+// Periodically sweep stale terminal instances whose containers were removed from the DOM
+setInterval(() => {
+  for (const [el, terminal] of instances) {
+    if (!el.isConnected) {
+      terminal.dispose();
+      instances.delete(el);
+      console.log("[webterm] Cleaned up stale terminal instance");
+    }
+  }
+}, RESOURCE_CLEANUP_INTERVAL_MS);
 
 /** Initialize all terminal containers on page load */
 async function initTerminals(): Promise<void> {
