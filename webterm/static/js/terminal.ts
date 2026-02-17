@@ -13,6 +13,19 @@ const MAX_MESSAGE_QUEUE_SIZE = 1000;
 /** How often to run periodic resource cleanup (ms) */
 const RESOURCE_CLEANUP_INTERVAL_MS = 30_000;
 
+/** Shared Ghostty WASM instance (loaded once, reused across all terminals) */
+let sharedGhostty: Ghostty | null = null;
+
+/** Load or reuse the shared Ghostty WASM instance */
+async function getSharedGhostty(): Promise<Ghostty> {
+  if (!sharedGhostty) {
+    const wasmPath = getWasmPath();
+    console.log("[webterm] Loading shared Ghostty WASM:", wasmPath);
+    sharedGhostty = await Ghostty.load(wasmPath);
+  }
+  return sharedGhostty;
+}
+
 /** Default font stack - prefers system monospace, falls back through programming fonts */
 const DEFAULT_FONT_FAMILY =
   'ui-monospace, "SFMono-Regular", "FiraCode Nerd Font", "FiraMono Nerd Font", ' +
@@ -598,6 +611,9 @@ class WebTerminal {
   private fontFamily: string;
   private fontSize: number;
   private cleanupTimer: number | undefined;
+  private resizeObserver: ResizeObserver | null = null;
+  private mobileKeybarStyle: HTMLStyleElement | null = null;
+  private boundHandlers: { target: EventTarget; type: string; handler: EventListener; options?: boolean | AddEventListenerOptions }[] = [];
 
   private constructor(
     container: HTMLElement,
@@ -615,6 +631,17 @@ class WebTerminal {
     this.fontSize = fontSize;
   }
 
+  /** Register an event listener that will be removed on dispose */
+  private addTrackedListener(
+    target: EventTarget,
+    type: string,
+    handler: EventListener,
+    options?: boolean | AddEventListenerOptions
+  ): void {
+    target.addEventListener(type, handler, options);
+    this.boundHandlers.push({ target, type, handler, options });
+  }
+
   /** Create and initialize a WebTerminal instance */
   static async create(
     container: HTMLElement,
@@ -629,8 +656,8 @@ class WebTerminal {
     // Determine WASM path and pre-load Ghostty
     const wasmPath = getWasmPath();
     console.log("[webterm:create] WASM path:", wasmPath);
-    console.log("[webterm:create] Loading Ghostty WASM...");
-    const ghostty = await Ghostty.load(wasmPath);
+    console.log("[webterm:create] Loading shared Ghostty WASM...");
+    const ghostty = await getSharedGhostty();
     console.log("[webterm:create] Ghostty loaded:", ghostty);
     
     // Build terminal options
@@ -761,7 +788,7 @@ class WebTerminal {
     this.setupResizeObserver();
 
     // Handle window resize (some browsers don't trigger ResizeObserver on window resize)
-    window.addEventListener("resize", () => {
+    this.addTrackedListener(window, "resize", () => {
       this.fit();
     });
 
@@ -802,19 +829,19 @@ class WebTerminal {
     };
 
     // Focus terminal when returning to the tab
-    document.addEventListener("visibilitychange", () => {
+    this.addTrackedListener(document, "visibilitychange", () => {
       if (!document.hidden) {
         restoreFocus();
       }
     });
 
     // Restore focus when browser window regains focus
-    window.addEventListener("focus", () => {
+    this.addTrackedListener(window, "focus", () => {
       restoreFocus();
     });
 
     // Safari can restore tabs via bfcache without a focus event.
-    window.addEventListener("pageshow", () => {
+    this.addTrackedListener(window, "pageshow", () => {
       restoreFocus();
     });
   }
@@ -980,9 +1007,10 @@ class WebTerminal {
     });
 
     // Apply keybar modifiers to physical keyboard input even when the textarea isn't focused.
-    document.addEventListener(
+    this.addTrackedListener(
+      document,
       "keydown",
-      (event) => {
+      ((event: KeyboardEvent) => {
       if (!this.ctrlActive && !this.shiftActive && !this.altActive && !this.fnActive) {
         return;
       }
@@ -1051,7 +1079,7 @@ class WebTerminal {
       if (handled) {
         this.deactivateModifiers();
       }
-      },
+      }) as EventListener,
       { capture: true }
     );
 
@@ -1062,8 +1090,8 @@ class WebTerminal {
       this.mobileInput?.focus();
     };
 
-    this.element.addEventListener("touchend", focusTextarea, { passive: true });
-    this.element.addEventListener("click", focusTextarea);
+    this.addTrackedListener(this.element, "touchend", focusTextarea, { passive: true });
+    this.addTrackedListener(this.element, "click", focusTextarea);
   }
 
   private setupTouchSelection(): void {
@@ -1188,6 +1216,7 @@ class WebTerminal {
       }
     `;
     document.head.appendChild(style);
+    this.mobileKeybarStyle = style;
     document.body.appendChild(keybar);
     this.mobileKeybar = keybar;
 
@@ -1438,7 +1467,7 @@ class WebTerminal {
 
   /** Setup resize observer for container */
   private setupResizeObserver(): void {
-    const resizeObserver = new ResizeObserver(() => {
+    this.resizeObserver = new ResizeObserver(() => {
       // Debounce resize events
       if (this.resizeDebounceTimer) {
         clearTimeout(this.resizeDebounceTimer);
@@ -1447,7 +1476,7 @@ class WebTerminal {
         this.fit();
       }, 100);
     });
-    resizeObserver.observe(this.element);
+    this.resizeObserver.observe(this.element);
   }
 
   private resizeDebounceTimer: number | undefined;
@@ -1650,7 +1679,23 @@ class WebTerminal {
   dispose(): void {
     this.stopResourceCleanup();
     this.stopHeartbeatWatchdog();
+    if (this.resizeDebounceTimer) {
+      clearTimeout(this.resizeDebounceTimer);
+      this.resizeDebounceTimer = undefined;
+    }
     this.socket?.close();
+    this.socket = null;
+    this.messageQueue.length = 0;
+    // Remove all tracked event listeners
+    for (const { target, type, handler, options } of this.boundHandlers) {
+      target.removeEventListener(type, handler, options);
+    }
+    this.boundHandlers.length = 0;
+    // Disconnect resize observer
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
     if (this.mobileInput) {
       this.mobileInput.remove();
       this.mobileInput = null;
@@ -1658,6 +1703,10 @@ class WebTerminal {
     if (this.mobileKeybar) {
       this.mobileKeybar.remove();
       this.mobileKeybar = null;
+    }
+    if (this.mobileKeybarStyle) {
+      this.mobileKeybarStyle.remove();
+      this.mobileKeybarStyle = null;
     }
     this.fitAddon.dispose();
     this.terminal.dispose();
