@@ -6,8 +6,9 @@ import (
 )
 
 var (
-	daResponsePattern = regexp.MustCompile(`\x1b\[[?>=][\d;]*c`)
-	daPartialPattern  = regexp.MustCompile(`\x1b(?:\[(?:[?>=][\d;]*)?)?$`)
+	daResponsePattern       = regexp.MustCompile(`\x1b\[[?>=][\d;]*c`)
+	daPartialPattern        = regexp.MustCompile(`\x1b(?:\[(?:[?>=][\d;]*)?)?$`)
+	unsupportedModePattern  = regexp.MustCompile(`\x1b\[\?7727[hl]`)
 )
 
 func FilterDASequences(data []byte, escapeBuffer []byte) ([]byte, []byte) {
@@ -27,4 +28,13 @@ func FilterDASequences(data []byte, escapeBuffer []byte) ([]byte, []byte) {
 		return filtered[:match[0]], filtered[match[0]:]
 	}
 	return filtered, nil
+}
+
+// FilterUnsupportedModes strips DEC private mode sequences that ghostty-web
+// does not implement, preventing noisy console warnings in the browser.
+func FilterUnsupportedModes(data []byte) []byte {
+	if !bytes.Contains(data, []byte("\x1b[?7727")) {
+		return data
+	}
+	return unsupportedModePattern.ReplaceAll(data, nil)
 }

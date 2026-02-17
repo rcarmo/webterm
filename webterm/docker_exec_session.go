@@ -147,6 +147,7 @@ func (s *DockerExecSession) handleOutput(data []byte) {
 	tracker := s.tracker
 	connector := s.connector
 	s.mu.Unlock()
+	filtered = FilterUnsupportedModes(filtered)
 	dispatchSessionOutput(filtered, tracker, s.replay, connector)
 }
 
