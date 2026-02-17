@@ -54,7 +54,7 @@ The server resolves static files from:
 
 - **Compose mode** loads services from a compose manifest and creates tiles for services carrying `webterm-command`.
 - **Watch mode** subscribes to Docker events and adds/removes tiles at runtime.
-- `webterm-theme` controls tile theme; default theme applies if unset.
+- `webterm-theme` controls tile theme; default theme applies if unset. Available themes: `tango`, `xterm`, `monokai`, `monokai-pro`, `ristretto`, `dark`, `light`, `dracula`, `catppuccin`, `nord`, `gruvbox`, `solarized`, `tokyo`, `miasma`, `github`, `gotham`.
 
 ## Reliability notes
 

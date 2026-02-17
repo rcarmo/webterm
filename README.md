@@ -83,6 +83,8 @@ Containers with these labels become tiles:
 - `webterm-command`: command string, or `auto` for Docker exec
 - `webterm-theme`: theme name (fallback is `xterm` palette)
 
+Available themes: `tango`, `xterm`, `monokai`, `monokai-pro`, `ristretto`, `dark`, `light`, `dracula`, `catppuccin`, `nord`, `gruvbox`, `solarized`, `tokyo`, `miasma`, `github`, `gotham`
+
 ### Compose manifest
 
 ```bash
