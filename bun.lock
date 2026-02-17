@@ -5,7 +5,7 @@
     "": {
       "name": "webterm-frontend",
       "dependencies": {
-        "ghostty-web": "github:rcarmo/ghostty-web#2837b81646aa0c00bb5a2881b5a53400346c76de",
+        "ghostty-web": "github:rcarmo/ghostty-web#b0aa99e8d06069d4bda6ffae87c9de4bb17b2699",
       },
       "devDependencies": {
         "typescript": "^5.7.0",
@@ -13,7 +13,7 @@
     },
   },
   "packages": {
-    "ghostty-web": ["ghostty-web@git+ssh://git@github.com/rcarmo/ghostty-web.git#2837b81646aa0c00bb5a2881b5a53400346c76de", {}, "2837b81646aa0c00bb5a2881b5a53400346c76de"],
+    "ghostty-web": ["ghostty-web@github:rcarmo/ghostty-web#b0aa99e", {}, "rcarmo-ghostty-web-b0aa99e"],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, ""],
   }
