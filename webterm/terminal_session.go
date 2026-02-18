@@ -146,9 +146,12 @@ func (s *TerminalSession) handleOutput(data []byte) {
 	s.mu.Unlock()
 	filtered = FilterUnsupportedModes(filtered)
 	if ts := s.idleSince.Load(); ts != 0 && time.Since(time.Unix(0, ts)) > idleTrackerThreshold {
-		// No client connected — only maintain the replay buffer.
+		// No client connected — maintain replay buffer but skip VT parser.
+		// Still call the connector so data flows if a client just reconnected
+		// before MarkIdle was cleared.
 		if len(filtered) > 0 {
 			s.replay.Add(filtered)
+			connector.OnData(filtered)
 		}
 		return
 	}

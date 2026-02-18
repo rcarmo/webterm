@@ -791,17 +791,18 @@ t.Fatalf("replay mismatch: %q", got)
 s.MarkIdle()
 s.idleSince.Store(time.Now().Add(-idleTrackerThreshold - time.Second).UnixNano())
 
-// Feed more output while idle — only replay should update
-s.handleOutput([]byte(" world"))
-if got := string(s.GetReplayBuffer()); got != "hello world" {
-t.Fatalf("replay should accumulate while idle: %q", got)
-}
-conn.mu.Lock()
-idleData := len(conn.data)
-conn.mu.Unlock()
-if idleData != 1 {
-t.Fatalf("connector should NOT receive data while idle, got %d calls", idleData)
-}
+	// Feed more output while idle — replay and connector still receive data,
+	// but the VT parser (tracker) is skipped.
+	s.handleOutput([]byte(" world"))
+	if got := string(s.GetReplayBuffer()); got != "hello world" {
+		t.Fatalf("replay should accumulate while idle: %q", got)
+	}
+	conn.mu.Lock()
+	idleData := len(conn.data)
+	conn.mu.Unlock()
+	if idleData != 2 {
+		t.Fatalf("connector should still receive data while idle, got %d calls", idleData)
+	}
 
 // GetScreenSnapshot should rebuild tracker on-demand
 snap2 := s.GetScreenSnapshot()

@@ -515,6 +515,13 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		session := s.sessionManager.GetSession(sessionID)
 		if session != nil && session.IsRunning() {
 			sessionCreated = true
+			// Clear idle state so the output pipeline resumes fully
+			connector := &localClientConnector{
+				server:    s,
+				sessionID: sessionID,
+				routeKey:  routeKey,
+			}
+			session.UpdateConnector(connector)
 			replay := daResponsePattern.ReplaceAll(session.GetReplayBuffer(), nil)
 			if len(replay) > 0 {
 				s.enqueueWSFrame(routeKey, websocket.BinaryMessage, replay)

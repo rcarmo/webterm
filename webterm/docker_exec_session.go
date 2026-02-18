@@ -154,6 +154,7 @@ func (s *DockerExecSession) handleOutput(data []byte) {
 	if ts := s.idleSince.Load(); ts != 0 && time.Since(time.Unix(0, ts)) > idleTrackerThreshold {
 		if len(filtered) > 0 {
 			s.replay.Add(filtered)
+			connector.OnData(filtered)
 		}
 		return
 	}
