@@ -12,6 +12,8 @@ import { Terminal, FitAddon, Ghostty, type ITerminalOptions, type ITheme } from 
 const MAX_MESSAGE_QUEUE_SIZE = 1000;
 /** How often to run periodic resource cleanup (ms) */
 const RESOURCE_CLEANUP_INTERVAL_MS = 30_000;
+/** Maximum bytes to buffer while the tab is hidden (256 KB) */
+const MAX_HIDDEN_BUFFER_BYTES = 256 * 1024;
 
 /** Shared Ghostty WASM instance (loaded once, reused across all terminals) */
 let sharedGhostty: Ghostty | null = null;
@@ -648,6 +650,7 @@ class WebTerminal {
   private terminal: Terminal;
   private fitAddon: FitAddon;
   private socket: WebSocket | null = null;
+  private socketGeneration = 0;
   private element: HTMLElement;
   private wsUrl: string;
   private reconnectAttempts = 0;
@@ -676,6 +679,10 @@ class WebTerminal {
   private resizeObserver: ResizeObserver | null = null;
   private mobileKeybarStyle: HTMLStyleElement | null = null;
   private boundHandlers: { target: EventTarget; type: string; handler: EventListener; options?: boolean | AddEventListenerOptions }[] = [];
+  private isTabHidden = false;
+  private hiddenBuffer: Uint8Array[] = [];
+  private hiddenBufferBytes = 0;
+  private static sharedTextEncoder = new TextEncoder();
 
   private constructor(
     container: HTMLElement,
@@ -793,6 +800,8 @@ class WebTerminal {
       this.setupMobileKeybar();
     }
 
+    this.isTabHidden = document.hidden;
+
     // Start periodic resource cleanup
     this.startResourceCleanup();
 
@@ -810,11 +819,11 @@ class WebTerminal {
     // Focus terminal when returning to the tab
     this.addTrackedListener(document, "visibilitychange", () => {
       if (document.hidden) {
+        this.isTabHidden = true;
         this.stopHeartbeatWatchdog();
       } else {
-        if (this.socket?.readyState === WebSocket.OPEN) {
-          this.startHeartbeatWatchdog();
-        }
+        this.isTabHidden = false;
+        this.refreshConnection();
         restoreFocus();
       }
     });
@@ -1095,34 +1104,37 @@ class WebTerminal {
       canvas.dispatchEvent(event);
     };
 
-    canvas.addEventListener(
+    this.addTrackedListener(
+      canvas,
       "touchstart",
-      (e) => {
+      ((e: TouchEvent) => {
         if (e.touches.length !== 1) return;
         dispatchMouse("mousedown", e.touches[0]);
         e.preventDefault();
-      },
+      }) as EventListener,
       { passive: false }
     );
 
-    canvas.addEventListener(
+    this.addTrackedListener(
+      canvas,
       "touchmove",
-      (e) => {
+      ((e: TouchEvent) => {
         if (e.touches.length !== 1) return;
         dispatchMouse("mousemove", e.touches[0]);
         e.preventDefault();
-      },
+      }) as EventListener,
       { passive: false }
     );
 
-    canvas.addEventListener(
+    this.addTrackedListener(
+      canvas,
       "touchend",
-      (e) => {
+      ((e: TouchEvent) => {
         const touch = e.changedTouches[0];
         if (!touch) return;
         dispatchMouse("mouseup", touch);
         e.preventDefault();
-      },
+      }) as EventListener,
       { passive: false }
     );
   }
@@ -1330,9 +1342,9 @@ class WebTerminal {
       isDragging = false;
     };
 
-    dragHandle.addEventListener("touchstart", onTouchStart, { passive: false });
-    document.addEventListener("touchmove", onTouchMove, { passive: false });
-    document.addEventListener("touchend", onTouchEnd);
+    this.addTrackedListener(dragHandle, "touchstart", onTouchStart as EventListener, { passive: false });
+    this.addTrackedListener(document, "touchmove", onTouchMove as EventListener, { passive: false });
+    this.addTrackedListener(document, "touchend", onTouchEnd as EventListener);
   }
 
   /** Deactivate all modifiers */
@@ -1476,12 +1488,16 @@ class WebTerminal {
       return;
     }
 
+    const gen = ++this.socketGeneration;
     this.socket = new WebSocket(this.wsUrl);
     this.socket.binaryType = "arraybuffer";
 
     this.socket.addEventListener("open", () => {
+      if (gen !== this.socketGeneration) return;
       this.reconnectAttempts = 0;
-      this.startHeartbeatWatchdog();
+      if (!this.isTabHidden) {
+        this.startHeartbeatWatchdog();
+      }
       this.element.classList.add("-connected");
       this.element.classList.remove("-disconnected");
 
@@ -1501,6 +1517,7 @@ class WebTerminal {
     });
 
     this.socket.addEventListener("close", () => {
+      if (gen !== this.socketGeneration) return;
       this.stopHeartbeatWatchdog();
       this.element.classList.remove("-connected");
       this.element.classList.add("-disconnected");
@@ -1512,20 +1529,24 @@ class WebTerminal {
     });
 
     this.socket.addEventListener("message", (event) => {
+      if (gen !== this.socketGeneration) return;
       this.handleMessage(event.data);
     });
   }
 
   /** Handle incoming WebSocket message */
   private handleTextMessage(data: string): void {
-    // JSON message
     try {
       const envelope = JSON.parse(data) as [string, unknown];
       const [type, payload] = envelope;
 
       switch (type) {
         case "stdout":
-          this.terminal.write(payload as string);
+          if (this.isTabHidden) {
+            this.bufferWhileHidden(payload as string);
+          } else {
+            this.terminal.write(payload as string);
+          }
           break;
         case "pong":
           this.lastPongAt = Date.now();
@@ -1534,8 +1555,11 @@ class WebTerminal {
           console.debug("Unknown message type:", type);
       }
     } catch {
-      // Not JSON - treat as raw text
-      this.terminal.write(data);
+      if (this.isTabHidden) {
+        this.bufferWhileHidden(data);
+      } else {
+        this.terminal.write(data);
+      }
     }
   }
 
@@ -1543,8 +1567,12 @@ class WebTerminal {
   private handleMessage(data: string | ArrayBuffer | Blob): void {
     this.lastMessageAt = Date.now();
     if (data instanceof ArrayBuffer) {
-      // Binary data - write directly to terminal as Uint8Array (avoids string allocation)
-      this.terminal.write(new Uint8Array(data));
+      const bytes = new Uint8Array(data);
+      if (this.isTabHidden) {
+        this.bufferWhileHidden(bytes);
+      } else {
+        this.terminal.write(bytes);
+      }
       return;
     }
     if (data instanceof Blob) {
@@ -1610,6 +1638,35 @@ class WebTerminal {
     }
   }
 
+  /** Buffer terminal data while the tab is hidden instead of writing to WASM */
+  private bufferWhileHidden(data: string | Uint8Array): void {
+    const chunk = typeof data === "string"
+      ? WebTerminal.sharedTextEncoder.encode(data)
+      : data;
+    while (
+      this.hiddenBufferBytes + chunk.byteLength > MAX_HIDDEN_BUFFER_BYTES &&
+      this.hiddenBuffer.length > 0
+    ) {
+      const evicted = this.hiddenBuffer.shift()!;
+      this.hiddenBufferBytes -= evicted.byteLength;
+    }
+    this.hiddenBuffer.push(chunk);
+    this.hiddenBufferBytes += chunk.byteLength;
+  }
+
+  /** Discard hidden buffer and reconnect to get clean state from server replay */
+  private refreshConnection(): void {
+    this.hiddenBuffer.length = 0;
+    this.hiddenBufferBytes = 0;
+    this.reconnectAttempts = 0;
+    this.stopHeartbeatWatchdog();
+    if (this.socket) {
+      this.socket.close();
+      this.socket = null;
+    }
+    this.connect();
+  }
+
   /** Send message to server with queueing support */
   private send(message: [string, unknown]): void {
     if (this.messageQueue.length >= MAX_MESSAGE_QUEUE_SIZE) {
@@ -1669,6 +1726,8 @@ class WebTerminal {
     this.socket?.close();
     this.socket = null;
     this.messageQueue.length = 0;
+    this.hiddenBuffer.length = 0;
+    this.hiddenBufferBytes = 0;
     // Remove all tracked event listeners
     for (const { target, type, handler, options } of this.boundHandlers) {
       target.removeEventListener(type, handler, options);
