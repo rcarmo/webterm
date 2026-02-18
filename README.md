@@ -13,7 +13,7 @@ https://github.com/user-attachments/assets/62c52183-83a3-4fb5-97b1-ed001de4f53a
 - Typeahead find for quickly finding and launching sessions with minimal friction
 - Web terminal with reconnect support
 - Ghostty WebAssembly terminal engine for fast rendering from [`ghostty-web`](https://github.com/rcarmo/ghostty-web)
-- Session dashboard with live SVG screenshots from [`go-te`](https://github.com/rcarmo/go-te)
+- Session dashboard with live SVG (or optional PNG) screenshots from [`go-te`](https://github.com/rcarmo/go-te)
 - Docker watch mode (`webterm-command` / `webterm-theme` labels)
 - Docker compose manifest ingestion
 - CPU sparkline tiles for compose services

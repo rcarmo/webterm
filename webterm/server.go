@@ -1087,12 +1087,11 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 			dockerWatchJS = "true"
 		}
 		screenshotEndpoint := "/screenshot.svg"
+		screenshotDownloadEndpoint := "/screenshot.svg"
 		screenshotDownloadQuery := "sanitize_font_urls=1&download=1"
 		screenshotDownloadExt := "svg"
 		if s.screenshotMode == "png" {
 			screenshotEndpoint = "/screenshot.png"
-			screenshotDownloadQuery = "download=1"
-			screenshotDownloadExt = "png"
 		}
 		html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
@@ -1151,6 +1150,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		const composeMode = %s;
 		const dockerWatchMode = %s;
 		const screenshotEndpoint = %q;
+		const screenshotDownloadEndpoint = %q;
 		const screenshotDownloadQuery = %q;
 		const screenshotDownloadExt = %q;
 		let cardsBySlug = {};
@@ -1172,7 +1172,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		function downloadSanitizedScreenshot(slug) {
 			if (!slug) return;
 			const link = document.createElement('a');
-			link.href = screenshotEndpoint + '?route_key=' + encodeURIComponent(slug) + '&' + screenshotDownloadQuery + '&_t=' + Date.now();
+			link.href = screenshotDownloadEndpoint + '?route_key=' + encodeURIComponent(slug) + '&' + screenshotDownloadQuery + '&_t=' + Date.now();
 			link.download = slug + '-screenshot.' + screenshotDownloadExt;
 			document.body.appendChild(link);
 			link.click();
@@ -1605,7 +1605,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		}
 	</script>
 </body>
-</html>`, string(tilesJSON), composeModeJS, dockerWatchJS, screenshotEndpoint, screenshotDownloadQuery, screenshotDownloadExt)
+</html>`, string(tilesJSON), composeModeJS, dockerWatchJS, screenshotEndpoint, screenshotDownloadEndpoint, screenshotDownloadQuery, screenshotDownloadExt)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, html)
 		return

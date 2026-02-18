@@ -16,7 +16,8 @@ webterm/server.go (LocalServer)
         ├── docker_exec_session.go  (Docker exec-backed sessions)
         ├── docker_watcher.go       (container add/remove discovery)
         ├── docker_stats.go         (CPU sampling + sparkline data)
-        └── svg_exporter.go         (terminal snapshot -> SVG)
+        ├── svg_exporter.go         (terminal snapshot -> SVG)
+        └── png_exporter.go         (terminal snapshot -> PNG via coverage blending)
 ```
 
 ## Packages
@@ -24,6 +25,7 @@ webterm/server.go (LocalServer)
 - `cmd/webterm`: CLI entrypoint
 - `webterm`: server/runtime/domain logic
 - `internal/terminalstate`: Go terminal emulator wrapper (`go-te`) used for screenshots
+- `webterm/coverage_table.go`: coverage map for approximate PNG rendering
 
 ## Runtime data flow
 
@@ -33,7 +35,7 @@ webterm/server.go (LocalServer)
    - live WS stream (`stdout`)
    - replay buffer (reconnect support)
    - terminal-state tracker (`go-te`) for screenshots
-4. Dashboard pulls `/screenshot.svg` and listens on `/events` for activity.
+4. Dashboard pulls `/screenshot.svg` (default) or `/screenshot.png` when `WEBTERM_SCREENSHOT_MODE=png`, and listens on `/events` for activity.
 
 ## Static assets
 

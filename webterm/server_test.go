@@ -552,6 +552,9 @@ func TestDashboardUsesPNGWhenEnabled(t *testing.T) {
 	if !strings.Contains(text, "screenshot.png") {
 		t.Fatalf("expected dashboard to request png screenshots when enabled")
 	}
+	if !strings.Contains(text, "sanitize_font_urls=1&download=1") || !strings.Contains(text, "screenshot.svg") {
+		t.Fatalf("expected contextmenu downloads to use svg screenshots")
+	}
 }
 
 func TestRootTerminalPageAndSparklineValidation(t *testing.T) {
