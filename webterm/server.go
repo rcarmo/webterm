@@ -240,8 +240,8 @@ func NewLocalServer(config Config, options ServerOptions) *LocalServer {
 		fontSize = DefaultFontSize
 	}
 	screenshotMode := strings.ToLower(strings.TrimSpace(os.Getenv(ScreenshotModeEnv)))
-	if screenshotMode != "png" {
-		screenshotMode = "svg"
+	if screenshotMode != "svg" {
+		screenshotMode = "png"
 	}
 	apps := append([]App{}, config.Apps...)
 	for _, app := range options.LandingApps {

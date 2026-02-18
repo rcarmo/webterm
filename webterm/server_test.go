@@ -456,7 +456,6 @@ func TestScreenshotAndETag(t *testing.T) {
 }
 
 func TestScreenshotPNGAndETag(t *testing.T) {
-	t.Setenv(ScreenshotModeEnv, "png")
 	server, httpServer, _ := newServerForTests(t, false)
 	if _, err := server.sessionManager.NewSession("shell", "sid", "shell", 80, 24); err != nil {
 		t.Fatalf("NewSession error = %v", err)
@@ -534,13 +533,13 @@ func TestDashboardIncludesContextMenuSanitizedDownload(t *testing.T) {
 	if !strings.Contains(text, "contextmenu") || !strings.Contains(text, "sanitize_font_urls=1&download=1") {
 		t.Fatalf("expected contextmenu sanitized download wiring in dashboard page")
 	}
-	if !strings.Contains(text, "screenshot.svg") {
-		t.Fatalf("expected dashboard to request svg screenshots by default")
+	if !strings.Contains(text, "screenshot.png") {
+		t.Fatalf("expected dashboard to request png screenshots by default")
 	}
 }
 
-func TestDashboardUsesPNGWhenEnabled(t *testing.T) {
-	t.Setenv(ScreenshotModeEnv, "png")
+func TestDashboardUsesSVGWhenConfigured(t *testing.T) {
+	t.Setenv(ScreenshotModeEnv, "svg")
 	_, httpServer, _ := newServerForTests(t, true)
 	resp, err := http.Get(httpServer.URL + "/")
 	if err != nil {
@@ -549,8 +548,8 @@ func TestDashboardUsesPNGWhenEnabled(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	text := string(body)
-	if !strings.Contains(text, "screenshot.png") {
-		t.Fatalf("expected dashboard to request png screenshots when enabled")
+	if !strings.Contains(text, "screenshot.svg") {
+		t.Fatalf("expected dashboard to request svg screenshots when configured")
 	}
 	if !strings.Contains(text, "sanitize_font_urls=1&download=1") || !strings.Contains(text, "screenshot.svg") {
 		t.Fatalf("expected contextmenu downloads to use svg screenshots")

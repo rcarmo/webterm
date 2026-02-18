@@ -35,7 +35,7 @@ webterm/server.go (LocalServer)
    - live WS stream (`stdout`)
    - replay buffer (reconnect support)
    - terminal-state tracker (`go-te`) for screenshots
-4. Dashboard pulls `/screenshot.svg` (default) or `/screenshot.png` when `WEBTERM_SCREENSHOT_MODE=png`, and listens on `/events` for activity.
+4. Dashboard pulls `/screenshot.png` (default) or `/screenshot.svg` when `WEBTERM_SCREENSHOT_MODE=svg`, and listens on `/events` for activity.
 
 ## Static assets
 

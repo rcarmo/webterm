@@ -13,7 +13,7 @@ https://github.com/user-attachments/assets/62c52183-83a3-4fb5-97b1-ed001de4f53a
 - Typeahead find for quickly finding and launching sessions with minimal friction
 - Web terminal with reconnect support
 - Ghostty WebAssembly terminal engine for fast rendering from [`ghostty-web`](https://github.com/rcarmo/ghostty-web)
-- Session dashboard with live SVG (or optional PNG) screenshots from [`go-te`](https://github.com/rcarmo/go-te)
+- Session dashboard with live PNG (or optional SVG) screenshots from [`go-te`](https://github.com/rcarmo/go-te)
 - Docker watch mode (`webterm-command` / `webterm-theme` labels)
 - Docker compose manifest ingestion
 - CPU sparkline tiles for compose services
@@ -97,7 +97,7 @@ go run ./cmd/webterm -- --compose-manifest ./docker-compose.yaml
 - `WEBTERM_DOCKER_USERNAME`: user for Docker exec sessions
 - `WEBTERM_DOCKER_AUTO_COMMAND`: override auto command (`/bin/bash` default)
 - `WEBTERM_SCREENSHOT_FORCE_REDRAW`: force redraw before screenshots (`true/1/yes/on`)
-- `WEBTERM_SCREENSHOT_MODE`: screenshot format for dashboard thumbnails (`svg` default, set `png` to enable PNG)
+- `WEBTERM_SCREENSHOT_MODE`: screenshot format for dashboard thumbnails (`png` default, set `svg` to use SVG)
 - `DOCKER_HOST`: Docker daemon endpoint override
 
 ## Development (Makefile-first)
