@@ -443,7 +443,6 @@ interface TerminalConfig {
 
 /** Parse configuration from element data attributes */
 function parseConfig(element: HTMLElement): TerminalConfig {
-  console.log("[webterm:parseConfig] Parsing config from element");
   const config: TerminalConfig = {};
 
   if (element.dataset.fontFamily) {
@@ -456,48 +455,34 @@ function parseConfig(element: HTMLElement): TerminalConfig {
         const resolved = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
         if (resolved) {
           fontFamily = resolved;
-          console.log(`[webterm:parseConfig] Resolved CSS variable ${varName} to: "${fontFamily}"`);
         } else {
-          console.warn(`[webterm:parseConfig] CSS variable ${varName} not found, using default font`);
+          console.warn(`[webterm] CSS variable ${varName} not found, using default font`);
           fontFamily = DEFAULT_FONT_FAMILY;
         }
       }
     }
     config.fontFamily = fontFamily;
-    console.log(`[webterm:parseConfig] fontFamily: "${config.fontFamily}"`);
   }
   if (element.dataset.fontSize) {
     config.fontSize = parseInt(element.dataset.fontSize, 10);
-    console.log(`[webterm:parseConfig] fontSize: ${config.fontSize}`);
   }
   if (element.dataset.scrollback) {
     config.scrollback = parseInt(element.dataset.scrollback, 10);
-    console.log(`[webterm:parseConfig] scrollback: ${config.scrollback}`);
   }
   if (element.dataset.theme) {
     const themeName = element.dataset.theme.toLowerCase();
-    console.log(`[webterm:parseConfig] theme attribute: "${element.dataset.theme}" -> normalized: "${themeName}"`);
-    console.log(`[webterm:parseConfig] Available themes: ${Object.keys(THEMES).join(", ")}`);
-    console.log(`[webterm:parseConfig] Theme "${themeName}" in THEMES? ${themeName in THEMES}`);
-    
     if (themeName in THEMES) {
       config.theme = THEMES[themeName];
-      console.log(`[webterm:parseConfig] Using built-in theme "${themeName}":`, JSON.stringify(config.theme, null, 2));
     } else {
       // Try parsing as JSON for custom themes
-      console.log(`[webterm:parseConfig] Theme not found in THEMES, trying JSON parse...`);
       try {
         config.theme = JSON.parse(element.dataset.theme) as ITheme;
-        console.log(`[webterm:parseConfig] Parsed custom JSON theme:`, config.theme);
       } catch (e) {
-        console.warn(`[webterm:parseConfig] Unknown theme "${element.dataset.theme}", JSON parse failed:`, e);
+        console.warn(`[webterm] Unknown theme "${element.dataset.theme}"`, e);
       }
     }
-  } else {
-    console.log(`[webterm:parseConfig] No theme attribute found on element`);
   }
 
-  console.log(`[webterm:parseConfig] Final config:`, config);
   return config;
 }
 
@@ -725,21 +710,10 @@ class WebTerminal {
     wsUrl: string,
     config: TerminalConfig
   ): Promise<WebTerminal> {
-    console.log("[webterm:create] WebTerminal.create() called");
-    console.log("[webterm:create] Container:", container);
-    console.log("[webterm:create] wsUrl:", wsUrl);
-    console.log("[webterm:create] Config received:", JSON.stringify(config, null, 2));
-    
-    // Determine WASM path and pre-load Ghostty
-    const wasmPath = getWasmPath();
-    console.log("[webterm:create] WASM path:", wasmPath);
-    console.log("[webterm:create] Loading shared Ghostty WASM...");
     const ghostty = await getSharedGhostty();
-    console.log("[webterm:create] Ghostty loaded:", ghostty);
     
     // Build terminal options
     const themeToUse = config.theme ?? THEMES.tango;
-    console.log("[webterm:create] Theme to use (config.theme ?? THEMES.xterm):", JSON.stringify(themeToUse, null, 2));
     const fontFamily = config.fontFamily?.trim() || DEFAULT_FONT_FAMILY;
     const fontSize = config.fontSize ?? 16;
 
@@ -753,37 +727,13 @@ class WebTerminal {
       theme: themeToUse,
       ghostty,
     };
-    console.log("[webterm:create] Full ITerminalOptions:", JSON.stringify(options, null, 2));
 
-    console.log("[webterm:create] Creating ghostty-web Terminal instance...");
     const terminal = new Terminal(options);
-    console.log("[webterm:create] Terminal created:", terminal);
-    console.log("[webterm:create] Terminal.options:", (terminal as unknown as { options?: unknown }).options);
-    
-    console.log("[webterm:create] Creating FitAddon...");
     const fitAddon = new FitAddon();
-    console.log("[webterm:create] Loading FitAddon into terminal...");
     terminal.loadAddon(fitAddon);
 
     // Open terminal (initializes rendering - WASM already loaded)
-    console.log("[webterm:create] Calling terminal.open(container)...");
     terminal.open(container);
-    console.log("[webterm:create] terminal.open() completed");
-    
-    // Check internal state after open
-    const internalTerminal = terminal as unknown as Record<string, unknown>;
-    console.log("[webterm:create] Terminal internal keys:", Object.keys(internalTerminal));
-    if (internalTerminal.renderer) {
-      console.log("[webterm:create] Renderer exists:", internalTerminal.renderer);
-      const renderer = internalTerminal.renderer as Record<string, unknown>;
-      console.log("[webterm:create] Renderer keys:", Object.keys(renderer));
-      if (renderer.theme) {
-        console.log("[webterm:create] Renderer.theme:", renderer.theme);
-      }
-      if (renderer.palette) {
-        console.log("[webterm:create] Renderer.palette:", renderer.palette);
-      }
-    }
 
     const instance = new WebTerminal(
       container,
@@ -793,73 +743,24 @@ class WebTerminal {
       fontFamily,
       fontSize
     );
-    console.log("[webterm:create] WebTerminal instance created");
     instance.initialize();
-    console.log("[webterm:create] WebTerminal initialized");
     return instance;
   }
 
   /** Initialize event handlers and connect */
   private initialize(): void {
-    console.log("[webterm:init] initialize() called");
-    
-    // Check canvas state immediately
-    const canvas = this.element.querySelector("canvas");
-    console.log("[webterm:init] Canvas element:", canvas);
-    if (canvas) {
-      console.log("[webterm:init] Canvas dimensions:", {
-        width: canvas.width,
-        height: canvas.height,
-        clientWidth: canvas.clientWidth,
-        clientHeight: canvas.clientHeight,
-        style: canvas.style.cssText
-      });
-    }
-    console.log("[webterm:init] Container dimensions:", {
-      clientWidth: this.element.clientWidth,
-      clientHeight: this.element.clientHeight
-    });
-    
     // Wait for fonts to load before fitting to ensure correct measurements
     //
     // FONT INITIALIZATION (ghostty-web):
-    // -----------------------------------
     // The font stack is set in two places:
     // 1. At Terminal construction time via ITerminalOptions.fontFamily
-    //    - This sets the initial font for the renderer
     // 2. After web fonts load via terminal.loadFonts()
-    //    - This re-measures font metrics and triggers a full re-render
-    //
-    // The loadFonts() method (added in ghostty-web commit feab41f9a8e4491f):
-    // - Calls renderer.remeasureFont() to recalculate cell dimensions
-    // - Calls handleFontChange() to resize canvas and re-render
-    //
-    // DO NOT manually set terminal.options.fontFamily or call renderer methods
-    // directly - use the public loadFonts() API which handles the full chain.
-    //
-    // See: https://github.com/rcarmo/ghostty-web/commit/feab41f9a8e4491f04688a6620974c3f7762a3d9
+    //    - Re-measures font metrics and triggers a full re-render
     this.waitForFonts().then(() => {
-      console.log("[webterm:init] Fonts loaded, triggering font reload...");
-      // Use the public loadFonts() API which properly handles font re-measurement
-      // and triggers handleFontChange() internally. This is the correct approach
-      // per ghostty-web commit feab41f9a8e4491f04688a6620974c3f7762a3d9
       if (typeof (this.terminal as unknown as { loadFonts?: () => void }).loadFonts === "function") {
         (this.terminal as unknown as { loadFonts: () => void }).loadFonts();
-        console.log("[webterm:init] terminal.loadFonts() called");
       }
       this.fit();
-      console.log("[webterm:init] fit() completed");
-      
-      // Check canvas state after fit
-      const canvasAfterFit = this.element.querySelector("canvas");
-      if (canvasAfterFit) {
-        console.log("[webterm:init] Canvas after fit:", {
-          width: canvasAfterFit.width,
-          height: canvasAfterFit.height,
-          clientWidth: canvasAfterFit.clientWidth,
-          clientHeight: canvasAfterFit.clientHeight
-        });
-      }
     });
     
     // Setup resize observer (we use our own fit method, not FitAddon's)
@@ -1752,7 +1653,7 @@ class WebTerminal {
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
 
     setTimeout(() => {
-      console.log(`Reconnecting (attempt ${this.reconnectAttempts})...`);
+      console.log(`[webterm] Reconnecting (attempt ${this.reconnectAttempts})...`);
       this.connect();
     }, delay);
   }
@@ -1796,11 +1697,9 @@ class WebTerminal {
 
   /** Set terminal theme dynamically (accesses private renderer) */
   setTheme(theme: ITheme): void {
-    // ghostty-web Terminal doesn't expose setTheme, but the internal renderer has it
-    const renderer = (this.terminal as unknown as { renderer?: { setTheme: (t: ITheme) => void } }).renderer;
-    if (renderer && typeof renderer.setTheme === "function") {
-      renderer.setTheme(theme);
-    }
+    // Use the Terminal's options proxy so handleOptionChange fires,
+    // which updates the renderer theme AND triggers a re-render.
+    (this.terminal as unknown as { options: { theme: ITheme } }).options.theme = theme;
   }
 
   /** Get a named theme from the built-in themes */
@@ -1825,30 +1724,21 @@ setInterval(() => {
 
 /** Initialize all terminal containers on page load */
 async function initTerminals(): Promise<void> {
-  console.log("[webterm:init] initTerminals() called");
   const containers = document.querySelectorAll<HTMLElement>(".webterm-terminal");
-  console.log(`[webterm:init] Found ${containers.length} .webterm-terminal containers`);
 
   for (const el of containers) {
-    console.log("[webterm:init] Processing container:", el);
-    console.log("[webterm:init] Dataset:", JSON.stringify(el.dataset));
-    
     const wsUrl = el.dataset.sessionWebsocketUrl;
     if (!wsUrl) {
-        console.error("Missing data-session-websocket-url on terminal container");
+      console.error("[webterm] Missing data-session-websocket-url on terminal container");
       continue;
     }
 
     const config = parseConfig(el);
-    console.log("[webterm:init] Parsed config:", JSON.stringify(config, null, 2));
-    
     try {
-      console.log("[webterm:init] Calling WebTerminal.create()...");
       const terminal = await WebTerminal.create(el, wsUrl, config);
-      console.log("[webterm:init] WebTerminal created successfully");
       instances.set(el, terminal);
     } catch (e) {
-      console.error("Failed to create terminal:", e);
+      console.error("[webterm] Failed to create terminal:", e);
     }
   }
 }

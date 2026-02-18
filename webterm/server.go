@@ -1499,8 +1499,10 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	escapedFont := strings.ReplaceAll(fontFamily, `"`, "&quot;")
 	dataAttrs := fmt.Sprintf(`data-session-websocket-url="%s" data-font-size="%d" data-scrollback="1000" data-theme="%s" data-font-family="%s"`, htmlAttrEscape(wsURL), s.fontSize, htmlAttrEscape(theme), escapedFont)
-	page := fmt.Sprintf(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>%s</title><link rel="stylesheet" href="/static/monospace.css"><style>html,body{width:100%%;height:100%%}body{background:%s;margin:0;padding:0;overflow:hidden;font-family:var(--webterm-mono)}.webterm-terminal{width:100%%;height:100%%;display:block;overflow:hidden}</style></head><body><div id="terminal" class="webterm-terminal" %s></div><script type="module" src="/static/js/terminal.js"></script></body></html>`, htmlEscape(app.Name), themeBG, dataAttrs)
+	cacheBust := "?v=" + Version
+	page := fmt.Sprintf(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>%s</title><link rel="stylesheet" href="/static/monospace.css%s"><style>html,body{width:100%%;height:100%%}body{background:%s;margin:0;padding:0;overflow:hidden;font-family:var(--webterm-mono)}.webterm-terminal{width:100%%;height:100%%;display:block;overflow:hidden}</style></head><body><div id="terminal" class="webterm-terminal" %s></div><script type="module" src="/static/js/terminal.js%s"></script></body></html>`, htmlEscape(app.Name), cacheBust, themeBG, dataAttrs, cacheBust)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = io.WriteString(w, page)
 }
 
