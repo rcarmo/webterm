@@ -6,12 +6,19 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/google/shlex"
 	"github.com/rcarmo/webterm/internal/terminalstate"
 )
+
+// idleTrackerThreshold is the duration after which we stop feeding the VT
+// parser when no WebSocket client is connected.  The replay buffer continues
+// to accumulate so the tracker can be rebuilt on reconnect.
+const idleTrackerThreshold = 10 * time.Second
 
 type TerminalSession struct {
 	sessionID string
@@ -32,6 +39,7 @@ type TerminalSession struct {
 	doneOnce     sync.Once
 	waitErr      error
 	writeMu      sync.Mutex
+	idleSince    atomic.Int64 // unix nano; 0 = active
 }
 
 func NewTerminalSession(sessionID string, command string) *TerminalSession {
@@ -137,6 +145,13 @@ func (s *TerminalSession) handleOutput(data []byte) {
 	connector := s.connector
 	s.mu.Unlock()
 	filtered = FilterUnsupportedModes(filtered)
+	if ts := s.idleSince.Load(); ts != 0 && time.Since(time.Unix(0, ts)) > idleTrackerThreshold {
+		// No client connected — only maintain the replay buffer.
+		if len(filtered) > 0 {
+			s.replay.Add(filtered)
+		}
+		return
+	}
 	dispatchSessionOutput(filtered, tracker, s.replay, connector)
 }
 
@@ -224,6 +239,15 @@ func (s *TerminalSession) GetReplayBuffer() []byte {
 }
 
 func (s *TerminalSession) GetScreenSnapshot() terminalstate.Snapshot {
+	if s.idleSince.Load() != 0 {
+		// Tracker is stale — rebuild before snapshotting.
+		s.mu.Lock()
+		s.rebuildTracker()
+		tracker := s.tracker
+		width, height := s.width, s.height
+		s.mu.Unlock()
+		return snapshotFromTracker(tracker, width, height)
+	}
 	s.mu.RLock()
 	tracker := s.tracker
 	width, height := s.width, s.height
@@ -238,4 +262,26 @@ func (s *TerminalSession) UpdateConnector(connector SessionConnector) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.connector = connector
+	if s.idleSince.Swap(0) != 0 {
+		s.rebuildTracker()
+	}
+}
+
+// MarkIdle records that no observer is consuming output.
+func (s *TerminalSession) MarkIdle() {
+	s.idleSince.CompareAndSwap(0, time.Now().UnixNano())
+}
+
+// rebuildTracker replays the buffer through a fresh tracker so the screen
+// state is up-to-date after an idle period.  Caller must hold s.mu.
+func (s *TerminalSession) rebuildTracker() {
+	if s.tracker == nil {
+		return
+	}
+	fresh := terminalstate.NewTracker(s.width, s.height)
+	if data := s.replay.Bytes(); len(data) > 0 {
+		_ = fresh.Feed(data)
+		fresh.ConsumeActivityChanged()
+	}
+	s.tracker = fresh
 }

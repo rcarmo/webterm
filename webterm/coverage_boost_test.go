@@ -770,3 +770,61 @@ func TestDockerWatcherStartStop(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	watcher.Stop()
 }
+
+func TestIdleTrackerPauseAndRebuild(t *testing.T) {
+s := NewTerminalSession("idle-test", "echo hello")
+s.tracker = terminalstate.NewTracker(80, 24)
+conn := &recorderConnector{}
+s.connector = conn
+
+// Feed some output while active — tracker and replay both update
+s.handleOutput([]byte("hello"))
+snap1 := s.GetScreenSnapshot()
+if !snap1.HasChanges {
+t.Fatal("expected HasChanges after active feed")
+}
+if got := string(s.GetReplayBuffer()); got != "hello" {
+t.Fatalf("replay mismatch: %q", got)
+}
+
+// Mark idle and advance past threshold
+s.MarkIdle()
+s.idleSince.Store(time.Now().Add(-idleTrackerThreshold - time.Second).UnixNano())
+
+// Feed more output while idle — only replay should update
+s.handleOutput([]byte(" world"))
+if got := string(s.GetReplayBuffer()); got != "hello world" {
+t.Fatalf("replay should accumulate while idle: %q", got)
+}
+conn.mu.Lock()
+idleData := len(conn.data)
+conn.mu.Unlock()
+if idleData != 1 {
+t.Fatalf("connector should NOT receive data while idle, got %d calls", idleData)
+}
+
+// GetScreenSnapshot should rebuild tracker on-demand
+snap2 := s.GetScreenSnapshot()
+if !snap2.HasChanges {
+t.Fatal("snapshot after idle rebuild should have changes")
+}
+
+// UpdateConnector should clear idle and rebuild
+s.MarkIdle()
+s.idleSince.Store(time.Now().Add(-idleTrackerThreshold - time.Second).UnixNano())
+s.handleOutput([]byte("!"))
+conn2 := &recorderConnector{}
+s.UpdateConnector(conn2)
+if s.idleSince.Load() != 0 {
+t.Fatal("idleSince should be 0 after UpdateConnector")
+}
+
+// Feed after reconnect should go through full pipeline again
+s.handleOutput([]byte("x"))
+conn2.mu.Lock()
+got := len(conn2.data)
+conn2.mu.Unlock()
+if got != 1 {
+t.Fatalf("expected 1 data call after reconnect, got %d", got)
+}
+}

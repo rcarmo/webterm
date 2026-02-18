@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/rcarmo/webterm/internal/terminalstate"
 )
@@ -51,6 +53,7 @@ type DockerExecSession struct {
 	doneOnce     sync.Once
 	waitErr      error
 	writeMu      sync.Mutex
+	idleSince    atomic.Int64 // unix nano; 0 = active
 }
 
 func NewDockerExecSession(sessionID string, spec DockerExecSpec, socketPath string) *DockerExecSession {
@@ -148,6 +151,12 @@ func (s *DockerExecSession) handleOutput(data []byte) {
 	connector := s.connector
 	s.mu.Unlock()
 	filtered = FilterUnsupportedModes(filtered)
+	if ts := s.idleSince.Load(); ts != 0 && time.Since(time.Unix(0, ts)) > idleTrackerThreshold {
+		if len(filtered) > 0 {
+			s.replay.Add(filtered)
+		}
+		return
+	}
 	dispatchSessionOutput(filtered, tracker, s.replay, connector)
 }
 
@@ -307,6 +316,14 @@ func (s *DockerExecSession) GetReplayBuffer() []byte {
 }
 
 func (s *DockerExecSession) GetScreenSnapshot() terminalstate.Snapshot {
+	if s.idleSince.Load() != 0 {
+		s.mu.Lock()
+		s.rebuildTracker()
+		tracker := s.tracker
+		width, height := s.width, s.height
+		s.mu.Unlock()
+		return snapshotFromTracker(tracker, width, height)
+	}
 	s.mu.RLock()
 	tracker := s.tracker
 	width, height := s.width, s.height
@@ -321,4 +338,26 @@ func (s *DockerExecSession) UpdateConnector(connector SessionConnector) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.connector = connector
+	if s.idleSince.Swap(0) != 0 {
+		s.rebuildTracker()
+	}
+}
+
+// MarkIdle records that no observer is consuming output.
+func (s *DockerExecSession) MarkIdle() {
+	s.idleSince.CompareAndSwap(0, time.Now().UnixNano())
+}
+
+// rebuildTracker replays the buffer through a fresh tracker so the screen
+// state is up-to-date after an idle period.  Caller must hold s.mu.
+func (s *DockerExecSession) rebuildTracker() {
+	if s.tracker == nil {
+		return
+	}
+	fresh := terminalstate.NewTracker(s.width, s.height)
+	if data := s.replay.Bytes(); len(data) > 0 {
+		_ = fresh.Feed(data)
+		fresh.ConsumeActivityChanged()
+	}
+	s.tracker = fresh
 }

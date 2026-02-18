@@ -100,3 +100,5 @@ func (f *fakeSession) UpdateConnector(connector SessionConnector) {
 	defer f.mu.Unlock()
 	f.connector = connector
 }
+
+func (f *fakeSession) MarkIdle() {}

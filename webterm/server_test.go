@@ -88,6 +88,7 @@ func (b *blockingSession) SendMeta(map[string]any) bool       { return true }
 func (b *blockingSession) GetReplayBuffer() []byte            { return nil }
 func (b *blockingSession) ForceRedraw() error                 { return nil }
 func (b *blockingSession) UpdateConnector(SessionConnector)   {}
+func (b *blockingSession) MarkIdle()                          {}
 func (b *blockingSession) GetScreenSnapshot() terminalstate.Snapshot {
 	return terminalstate.Snapshot{Width: 80, Height: 24, Buffer: make([][]terminalstate.Cell, 24)}
 }

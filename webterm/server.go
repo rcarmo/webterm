@@ -487,6 +487,11 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	go s.wsSender(client)
 	defer s.stopWSClient(routeKey, client)
+	defer func() {
+		if session := s.sessionManager.GetSessionByRouteKey(routeKey); session != nil {
+			session.MarkIdle()
+		}
+	}()
 
 	// Helper to send JSON through the send channel (avoids concurrent conn writes)
 	sendJSON := func(v any) {

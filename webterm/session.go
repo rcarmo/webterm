@@ -24,6 +24,7 @@ type Session interface {
 	GetScreenSnapshot() terminalstate.Snapshot
 	ForceRedraw() error
 	UpdateConnector(connector SessionConnector)
+	MarkIdle()
 }
 
 type noopConnector struct{}
