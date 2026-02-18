@@ -52,6 +52,12 @@ type screenshotCacheEntry struct {
 	etag string
 }
 
+type screenshotPNGCacheEntry struct {
+	when time.Time
+	png  []byte
+	etag string
+}
+
 type wsClient struct {
 	routeKey string
 	conn     *websocket.Conn
@@ -164,6 +170,7 @@ type LocalServer struct {
 	theme      string
 	fontFamily string
 	fontSize   int
+	screenshotMode string
 
 	sessionManager *SessionManager
 	landingApps    []App
@@ -177,6 +184,7 @@ type LocalServer struct {
 	mu                    sync.RWMutex
 	wsClients             map[string]*wsClient
 	screenshotCache       map[string]screenshotCacheEntry
+	screenshotPNGCache    map[string]screenshotPNGCacheEntry
 	routeLastActivity     map[string]time.Time
 	routeLastSSE          map[string]time.Time
 	sseSubscribers        map[chan string]struct{}
@@ -231,6 +239,10 @@ func NewLocalServer(config Config, options ServerOptions) *LocalServer {
 	if fontSize <= 0 {
 		fontSize = DefaultFontSize
 	}
+	screenshotMode := strings.ToLower(strings.TrimSpace(os.Getenv(ScreenshotModeEnv)))
+	if screenshotMode != "png" {
+		screenshotMode = "svg"
+	}
 	apps := append([]App{}, config.Apps...)
 	for _, app := range options.LandingApps {
 		apps = append(apps, app)
@@ -241,6 +253,7 @@ func NewLocalServer(config Config, options ServerOptions) *LocalServer {
 		theme:      theme,
 		fontFamily: options.FontFamily,
 		fontSize:   fontSize,
+		screenshotMode: screenshotMode,
 
 		sessionManager: NewSessionManager(apps),
 		landingApps:    append([]App{}, options.LandingApps...),
@@ -253,6 +266,7 @@ func NewLocalServer(config Config, options ServerOptions) *LocalServer {
 		},
 		wsClients:             map[string]*wsClient{},
 		screenshotCache:       map[string]screenshotCacheEntry{},
+		screenshotPNGCache:    map[string]screenshotPNGCacheEntry{},
 		routeLastActivity:     map[string]time.Time{},
 		routeLastSSE:          map[string]time.Time{},
 		sseSubscribers:        map[chan string]struct{}{},
@@ -812,6 +826,118 @@ func (s *LocalServer) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	writeSVG(responseSVG, responseETag)
 }
 
+func (s *LocalServer) handleScreenshotPNG(w http.ResponseWriter, r *http.Request) {
+	if s.screenshotMode != "png" {
+		http.Error(w, "PNG screenshots disabled", http.StatusNotFound)
+		return
+	}
+	download := r.URL.Query().Get("download") == "1"
+	routeKey := r.URL.Query().Get("route_key")
+	routeKey, session, ok := s.chooseRouteForScreenshot(routeKey)
+	if !ok && routeKey != "" {
+		if _, exists := s.sessionManager.AppBySlug(routeKey); exists {
+			_ = s.createTerminalSession(routeKey, DefaultTerminalWidth, DefaultTerminalHeight)
+			deadline := time.Now().Add(500 * time.Millisecond)
+			for {
+				session = s.sessionManager.GetSessionByRouteKey(routeKey)
+				if session != nil {
+					ok = true
+					break
+				}
+				if time.Now().After(deadline) {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+	}
+	if !ok || session == nil {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	writeNotModified := func(etag string) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("ETag", etag)
+		w.WriteHeader(http.StatusNotModified)
+	}
+	writePNG := func(pngBytes []byte, etag string) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Content-Type", "image/png")
+		if download {
+			filename := sanitizeFilenameToken(routeKey) + "-screenshot.png"
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		}
+		_, _ = w.Write(pngBytes)
+	}
+	useConditional := !download
+
+	s.mu.RLock()
+	cached, hasCached := s.screenshotPNGCache[routeKey]
+	lastActivity := s.routeLastActivity[routeKey]
+	s.mu.RUnlock()
+	if hasCached && time.Since(cached.when) < s.screenshotTTL(routeKey) && len(cached.png) > 0 {
+		if useConditional && etagMatches(r.Header.Get("If-None-Match"), cached.etag) {
+			if !lastActivity.After(cached.when) {
+				writeNotModified(cached.etag)
+				return
+			}
+		} else {
+			writePNG(cached.png, cached.etag)
+			return
+		}
+	}
+
+	if s.screenshotForceRedraw {
+		_ = session.ForceRedraw()
+	}
+
+	snapshot := session.GetScreenSnapshot()
+	if hasCached && !snapshot.HasChanges && len(cached.png) > 0 {
+		if useConditional && etagMatches(r.Header.Get("If-None-Match"), cached.etag) {
+			writeNotModified(cached.etag)
+			return
+		}
+		writePNG(cached.png, cached.etag)
+		return
+	}
+
+	app, _ := s.sessionManager.AppBySlug(routeKey)
+	theme := strings.ToLower(strings.TrimSpace(app.Theme))
+	if theme == "" {
+		theme = strings.ToLower(s.theme)
+	}
+	palette := ThemePalettes[theme]
+	if palette == nil {
+		palette = ThemePalettes["xterm"]
+	}
+	background := palette["background"]
+	if background == "" {
+		background = ThemeBackgrounds["xterm"]
+	}
+	foreground := palette["foreground"]
+	if foreground == "" {
+		foreground = "#e5e5e5"
+	}
+
+	pngBytes, err := RenderTerminalPNG(snapshot.Buffer, snapshot.Width, snapshot.Height, background, foreground, palette)
+	if err != nil || len(pngBytes) == 0 {
+		http.Error(w, "Screenshot render failed", http.StatusInternalServerError)
+		return
+	}
+	hash := sha1.Sum(pngBytes)
+	etag := fmt.Sprintf(`"%x"`, hash[:])
+	s.mu.Lock()
+	s.screenshotPNGCache[routeKey] = screenshotPNGCacheEntry{when: time.Now(), png: pngBytes, etag: etag}
+	s.mu.Unlock()
+	if useConditional && etagMatches(r.Header.Get("If-None-Match"), etag) {
+		writeNotModified(etag)
+		return
+	}
+	writePNG(pngBytes, etag)
+}
+
 func (s *LocalServer) handleCPUSparkline(w http.ResponseWriter, r *http.Request) {
 	container := r.URL.Query().Get("container")
 	if strings.TrimSpace(container) == "" {
@@ -960,6 +1086,14 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		if s.dockerWatch {
 			dockerWatchJS = "true"
 		}
+		screenshotEndpoint := "/screenshot.svg"
+		screenshotDownloadQuery := "sanitize_font_urls=1&download=1"
+		screenshotDownloadExt := "svg"
+		if s.screenshotMode == "png" {
+			screenshotEndpoint = "/screenshot.png"
+			screenshotDownloadQuery = "download=1"
+			screenshotDownloadExt = "png"
+		}
 		html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
@@ -1016,6 +1150,9 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		let tiles = %s;
 		const composeMode = %s;
 		const dockerWatchMode = %s;
+		const screenshotEndpoint = %q;
+		const screenshotDownloadQuery = %q;
+		const screenshotDownloadExt = %q;
 		let cardsBySlug = {};
 
 		let searchQuery = '';
@@ -1035,8 +1172,8 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		function downloadSanitizedScreenshot(slug) {
 			if (!slug) return;
 			const link = document.createElement('a');
-			link.href = '/screenshot.svg?route_key=' + encodeURIComponent(slug) + '&sanitize_font_urls=1&download=1&_t=' + Date.now();
-			link.download = slug + '-screenshot.svg';
+			link.href = screenshotEndpoint + '?route_key=' + encodeURIComponent(slug) + '&' + screenshotDownloadQuery + '&_t=' + Date.now();
+			link.download = slug + '-screenshot.' + screenshotDownloadExt;
 			document.body.appendChild(link);
 			link.click();
 			link.remove();
@@ -1282,7 +1419,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 				return;
 			}
 			screenshotRequestInFlight = true;
-			const url = '/screenshot.svg?route_key=' + encodeURIComponent(slug);
+			const url = screenshotEndpoint + '?route_key=' + encodeURIComponent(slug);
 			const controller = new AbortController();
 			const timeout = setTimeout(() => controller.abort(), 5000);
 			const headers = {};
@@ -1468,7 +1605,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		}
 	</script>
 </body>
-</html>`, string(tilesJSON), composeModeJS, dockerWatchJS)
+</html>`, string(tilesJSON), composeModeJS, dockerWatchJS, screenshotEndpoint, screenshotDownloadQuery, screenshotDownloadExt)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, html)
 		return
@@ -1604,6 +1741,7 @@ func (s *LocalServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws/", s.handleWebSocket)
 	mux.HandleFunc("/screenshot.svg", s.handleScreenshot)
+	mux.HandleFunc("/screenshot.png", s.handleScreenshotPNG)
 	mux.HandleFunc("/cpu-sparkline.svg", s.handleCPUSparkline)
 	mux.HandleFunc("/events", s.handleEvents)
 	mux.HandleFunc("/health", s.handleHealth)
@@ -1631,6 +1769,11 @@ func (s *LocalServer) evictStaleScreenshots(ctx context.Context) {
 			for key, entry := range s.screenshotCache {
 				if time.Since(entry.when) > maxScreenshotCacheTTL {
 					delete(s.screenshotCache, key)
+				}
+			}
+			for key, entry := range s.screenshotPNGCache {
+				if time.Since(entry.when) > maxScreenshotCacheTTL {
+					delete(s.screenshotPNGCache, key)
 				}
 			}
 			s.mu.Unlock()

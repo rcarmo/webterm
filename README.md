@@ -97,6 +97,7 @@ go run ./cmd/webterm -- --compose-manifest ./docker-compose.yaml
 - `WEBTERM_DOCKER_USERNAME`: user for Docker exec sessions
 - `WEBTERM_DOCKER_AUTO_COMMAND`: override auto command (`/bin/bash` default)
 - `WEBTERM_SCREENSHOT_FORCE_REDRAW`: force redraw before screenshots (`true/1/yes/on`)
+- `WEBTERM_SCREENSHOT_MODE`: screenshot format for dashboard thumbnails (`svg` default, set `png` to enable PNG)
 - `DOCKER_HOST`: Docker daemon endpoint override
 
 ## Development (Makefile-first)

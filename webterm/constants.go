@@ -15,6 +15,7 @@ const (
 	DefaultTerminalHeight = 45
 
 	ScreenshotForceRedrawEnv = "WEBTERM_SCREENSHOT_FORCE_REDRAW"
+	ScreenshotModeEnv       = "WEBTERM_SCREENSHOT_MODE"
 	DockerUsernameEnv        = "WEBTERM_DOCKER_USERNAME"
 	DockerAutoCommandEnv     = "WEBTERM_DOCKER_AUTO_COMMAND"
 	DockerHostEnv            = "DOCKER_HOST"

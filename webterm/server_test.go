@@ -455,6 +455,38 @@ func TestScreenshotAndETag(t *testing.T) {
 	}
 }
 
+func TestScreenshotPNGAndETag(t *testing.T) {
+	t.Setenv(ScreenshotModeEnv, "png")
+	server, httpServer, _ := newServerForTests(t, false)
+	if _, err := server.sessionManager.NewSession("shell", "sid", "shell", 80, 24); err != nil {
+		t.Fatalf("NewSession error = %v", err)
+	}
+	resp, err := http.Get(httpServer.URL + "/screenshot.png?route_key=shell")
+	if err != nil {
+		t.Fatalf("screenshot request error = %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	etag := resp.Header.Get("ETag")
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if etag == "" || len(body) < 8 || string(body[:8]) != "\x89PNG\r\n\x1a\n" {
+		t.Fatalf("expected png body and etag")
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, httpServer.URL+"/screenshot.png?route_key=shell", nil)
+	req.Header.Set("If-None-Match", etag)
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("etag request error = %v", err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotModified {
+		t.Fatalf("expected 304, got %d", resp2.StatusCode)
+	}
+}
+
 func TestScreenshotCreatesSessionFromRequestedRoute(t *testing.T) {
 	_, httpServer, _ := newServerForTests(t, false)
 	resp, err := http.Get(httpServer.URL + "/screenshot.svg?route_key=shell")
@@ -501,6 +533,24 @@ func TestDashboardIncludesContextMenuSanitizedDownload(t *testing.T) {
 	text := string(body)
 	if !strings.Contains(text, "contextmenu") || !strings.Contains(text, "sanitize_font_urls=1&download=1") {
 		t.Fatalf("expected contextmenu sanitized download wiring in dashboard page")
+	}
+	if !strings.Contains(text, "screenshot.svg") {
+		t.Fatalf("expected dashboard to request svg screenshots by default")
+	}
+}
+
+func TestDashboardUsesPNGWhenEnabled(t *testing.T) {
+	t.Setenv(ScreenshotModeEnv, "png")
+	_, httpServer, _ := newServerForTests(t, true)
+	resp, err := http.Get(httpServer.URL + "/")
+	if err != nil {
+		t.Fatalf("dashboard request error = %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	text := string(body)
+	if !strings.Contains(text, "screenshot.png") {
+		t.Fatalf("expected dashboard to request png screenshots when enabled")
 	}
 }
 
