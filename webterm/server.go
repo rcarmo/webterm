@@ -28,7 +28,7 @@ const (
 	wsReadTimeout          = 90 * time.Second
 	wsPingPeriod           = 30 * time.Second
 	stdinWriteTimeout      = 2 * time.Second
-	screenshotCacheSeconds  = 300 * time.Millisecond
+	screenshotCacheSeconds  = 250 * time.Millisecond
 	maxScreenshotCacheTTL   = 20 * time.Second
 	screenshotEvictInterval = 60 * time.Second
 )
@@ -305,7 +305,7 @@ func (s *LocalServer) markRouteActivity(routeKey string) {
 	s.mu.Lock()
 	s.routeLastActivity[routeKey] = now
 	last := s.routeLastSSE[routeKey]
-	if now.Sub(last) < 500*time.Millisecond {
+	if now.Sub(last) < 250*time.Millisecond {
 		s.mu.Unlock()
 		return
 	}
@@ -1112,6 +1112,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		.tile { background: #1e293b; border: 1px solid #334155; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer; transition: border-color 0.15s; }
 		.tile:hover { border-color: #475569; }
 		.tile.selected { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.3); }
+		.tile.bell { border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,0.35); }
 		.tile-header { padding: 10px 12px; font-weight: bold; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; }
 		.tile-title { display: flex; align-items: center; gap: 8px; }
 		.sparkline { opacity: 0.9; }
@@ -1154,6 +1155,8 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		const screenshotDownloadQuery = %q;
 		const screenshotDownloadExt = %q;
 		let cardsBySlug = {};
+		const bellStoragePrefix = 'webterm:bell:';
+		const dashboardTitle = document.title;
 
 		let searchQuery = '';
 		let activeResultIndex = -1;
@@ -1169,6 +1172,41 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		const grid = document.getElementById('grid');
 		const subtitle = document.getElementById('subtitle');
 
+		function bellStorageKey(slug) {
+			return bellStoragePrefix + slug;
+		}
+
+		function hasBell(slug) {
+			if (!slug) return false;
+			return Boolean(localStorage.getItem(bellStorageKey(slug)));
+		}
+
+		function updateDashboardTitle() {
+			const anyBell = tiles.some((tile) => tile && tile.slug && hasBell(tile.slug));
+			document.title = anyBell ? '🔔 ' + dashboardTitle : dashboardTitle;
+		}
+
+		function applyBellState(slug) {
+			if (!slug) return;
+			const card = cardsBySlug[slug];
+			if (card) {
+				card.classList.toggle('bell', hasBell(slug));
+			}
+			updateDashboardTitle();
+		}
+
+		function clearBellState(slug) {
+			if (!slug) return;
+			localStorage.removeItem(bellStorageKey(slug));
+			applyBellState(slug);
+		}
+
+		window.addEventListener('storage', (event) => {
+			if (!event.key || !event.key.startsWith(bellStoragePrefix)) return;
+			const slug = event.key.slice(bellStoragePrefix.length);
+			applyBellState(slug);
+		});
+
 		function downloadSanitizedScreenshot(slug) {
 			if (!slug) return;
 			const link = document.createElement('a');
@@ -1182,6 +1220,9 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		function makeTile(tile) {
 			const card = document.createElement('div');
 			card.className = 'tile';
+			if (hasBell(tile.slug)) {
+				card.classList.add('bell');
+			}
 			const header = document.createElement('div');
 			header.className = 'tile-header';
 			const titleSpan = document.createElement('div');
@@ -1330,6 +1371,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 		function openTile(tile) {
 			if (!tile || !tile.slug) return;
+			clearBellState(tile.slug);
 			const url = '/?route_key=' + encodeURIComponent(tile.slug);
 			const target = 'webterm-' + tile.slug;
 			let win = window.open(url, target);
@@ -1505,7 +1547,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 		const pendingRefresh = {};
 		const lastRefresh = {};
-		const REFRESH_DEBOUNCE_MS = 500;
+		const REFRESH_DEBOUNCE_MS = 250;
 
 		function scheduleRefreshTile(slug) {
 			const now = Date.now();
@@ -1567,6 +1609,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 			refreshAll();
 			renderFloatingResults();
 			refreshSparklines();
+			updateDashboardTitle();
 		}
 
 		let source = null;
@@ -1647,7 +1690,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		fontFamily = "var(--webterm-mono)"
 	}
 	escapedFont := strings.ReplaceAll(fontFamily, `"`, "&quot;")
-	dataAttrs := fmt.Sprintf(`data-session-websocket-url="%s" data-font-size="%d" data-scrollback="1000" data-theme="%s" data-font-family="%s"`, htmlAttrEscape(wsURL), s.fontSize, htmlAttrEscape(theme), escapedFont)
+	dataAttrs := fmt.Sprintf(`data-session-websocket-url="%s" data-session-route-key="%s" data-session-name="%s" data-font-size="%d" data-scrollback="1000" data-theme="%s" data-font-family="%s"`, htmlAttrEscape(wsURL), htmlAttrEscape(routeKey), htmlAttrEscape(app.Name), s.fontSize, htmlAttrEscape(theme), escapedFont)
 	cacheBust := "?v=" + Version
 	page := fmt.Sprintf(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>%s</title><link rel="stylesheet" href="/static/monospace.css%s"><style>html,body{width:100%%;height:100%%}body{background:%s;margin:0;padding:0;overflow:hidden;font-family:var(--webterm-mono)}.webterm-terminal{width:100%%;height:100%%;display:block;overflow:hidden}</style></head><body><div id="terminal" class="webterm-terminal" %s></div><script type="module" src="/static/js/terminal.js%s"></script></body></html>`, htmlEscape(app.Name), cacheBust, themeBG, dataAttrs, cacheBust)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

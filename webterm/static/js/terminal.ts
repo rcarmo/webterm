@@ -14,6 +14,7 @@ const MAX_MESSAGE_QUEUE_SIZE = 1000;
 const RESOURCE_CLEANUP_INTERVAL_MS = 30_000;
 /** Maximum bytes to buffer while the tab is hidden (256 KB) */
 const MAX_HIDDEN_BUFFER_BYTES = 256 * 1024;
+const BELL_EMOJI = "🔔";
 
 /** Shared Ghostty WASM instance (loaded once, reused across all terminals) */
 let sharedGhostty: Ghostty | null = null;
@@ -682,6 +683,9 @@ class WebTerminal {
   private isTabHidden = false;
   private hiddenBuffer: Uint8Array[] = [];
   private hiddenBufferBytes = 0;
+  private baseTitle: string;
+  private bellActive = false;
+  private routeKey: string;
   private static sharedTextEncoder = new TextEncoder();
 
   private constructor(
@@ -690,7 +694,9 @@ class WebTerminal {
     terminal: Terminal,
     fitAddon: FitAddon,
     fontFamily: string,
-    fontSize: number
+    fontSize: number,
+    routeKey: string,
+    baseTitle: string
   ) {
     this.element = container;
     this.wsUrl = wsUrl;
@@ -698,6 +704,8 @@ class WebTerminal {
     this.fitAddon = fitAddon;
     this.fontFamily = fontFamily;
     this.fontSize = fontSize;
+    this.routeKey = routeKey;
+    this.baseTitle = baseTitle;
   }
 
   /** Register an event listener that will be removed on dispose */
@@ -709,6 +717,36 @@ class WebTerminal {
   ): void {
     target.addEventListener(type, handler, options);
     this.boundHandlers.push({ target, type, handler, options });
+  }
+
+  private bellStorageKey(): string | null {
+    if (!this.routeKey) {
+      return null;
+    }
+    return `webterm:bell:${this.routeKey}`;
+  }
+
+  private setBellActive(): void {
+    if (!this.bellActive) {
+      this.bellActive = true;
+      document.title = `${BELL_EMOJI} ${this.baseTitle}`;
+    }
+    const key = this.bellStorageKey();
+    if (key) {
+      localStorage.setItem(key, String(Date.now()));
+    }
+  }
+
+  private clearBellState(): void {
+    const key = this.bellStorageKey();
+    if (key) {
+      localStorage.removeItem(key);
+    }
+    if (!this.bellActive) {
+      return;
+    }
+    this.bellActive = false;
+    document.title = this.baseTitle;
   }
 
   /** Create and initialize a WebTerminal instance */
@@ -742,13 +780,22 @@ class WebTerminal {
     // Open terminal (initializes rendering - WASM already loaded)
     terminal.open(container);
 
+    const routeKey = container.dataset.sessionRouteKey
+      ?? new URLSearchParams(window.location.search).get("route_key")
+      ?? "";
+    const rawTitle = container.dataset.sessionName?.trim() || document.title;
+    const baseTitle = rawTitle.startsWith(`${BELL_EMOJI} `)
+      ? rawTitle.slice(BELL_EMOJI.length + 1)
+      : rawTitle;
     const instance = new WebTerminal(
       container,
       wsUrl,
       terminal,
       fitAddon,
       fontFamily,
-      fontSize
+      fontSize,
+      routeKey,
+      baseTitle
     );
     instance.initialize();
     return instance;
@@ -780,7 +827,12 @@ class WebTerminal {
 
     // Handle terminal input
     this.terminal.onData((data) => {
+      this.clearBellState();
       this.send(["stdin", data]);
+    });
+
+    this.terminal.onBell(() => {
+      this.setBellActive();
     });
 
     // Handle resize
@@ -807,8 +859,12 @@ class WebTerminal {
 
     // Connect WebSocket
     this.connect();
+    if (document.hasFocus()) {
+      this.clearBellState();
+    }
 
     const restoreFocus = () => {
+      this.clearBellState();
       if (isMobileDevice()) {
         this.focusMobileInput();
       } else {
