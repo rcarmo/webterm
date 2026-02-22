@@ -15,7 +15,7 @@ https://github.com/user-attachments/assets/62c52183-83a3-4fb5-97b1-ed001de4f53a
 - Ghostty WebAssembly terminal engine for fast rendering from [`ghostty-web`](https://github.com/rcarmo/ghostty-web)
 - Session dashboard with live PNG (or optional SVG) screenshots from [`go-te`](https://github.com/rcarmo/go-te)
 - Docker watch mode (`webterm-command` / `webterm-theme` labels)
-- Docker compose manifest ingestion
+- Docker compose manifest ingestion (see `prod.compose.yaml`)
 - CPU sparkline tiles for compose services
 - SSE activity updates for fast dashboard refresh
 - Mobile/touch support with virtual keyboard + draggable keybar
@@ -87,8 +87,10 @@ Available themes: `tango`, `xterm`, `monokai`, `monokai-pro`, `ristretto`, `dark
 
 ### Compose manifest
 
+Use `prod.compose.yaml` as the canonical multi-session compose example:
+
 ```bash
-go run ./cmd/webterm -- --compose-manifest ./docker-compose.yaml
+go run ./cmd/webterm -- --compose-manifest ./prod.compose.yaml
 ```
 
 ## Environment variables
