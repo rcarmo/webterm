@@ -1,18 +1,18 @@
 {
   "name": "webterm-frontend",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "ghostty-web": "github:rcarmo/ghostty-web#1fb87bdbdaa0c1d6cf700c45f5ebe44cd606453d"
-  },
   "devDependencies": {
     "typescript": "^5.7.0"
   },
+  "private": true,
   "scripts": {
     "build": "bun run typecheck && bun build webterm/static/js/terminal.ts --outfile=webterm/static/js/terminal.js --minify --target=browser && cp node_modules/ghostty-web/ghostty-vt.wasm webterm/static/js/",
     "build:fast": "bun build webterm/static/js/terminal.ts --outfile=webterm/static/js/terminal.js --minify --target=browser",
     "watch": "bun build webterm/static/js/terminal.ts --outfile=webterm/static/js/terminal.js --watch --target=browser",
     "typecheck": "bun x tsc --noEmit -p tsconfig.json",
     "copy-wasm": "cp node_modules/ghostty-web/ghostty-vt.wasm webterm/static/js/"
+  },
+  "type": "module",
+  "dependencies": {
+    "ghostty-web": "github:rcarmo/ghostty-web"
   }
 }
