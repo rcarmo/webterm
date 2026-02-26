@@ -1,11 +1,11 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
+  "configVersion": 1,
   "workspaces": {
     "": {
       "name": "webterm-frontend",
       "dependencies": {
-        "ghostty-web": "github:rcarmo/ghostty-web",
+        "ghostty-web": "github:rcarmo/ghostty-web#a5d8c7bc816094119acd281c4a216143d61d5845",
       },
       "devDependencies": {
         "typescript": "^5.7.0",
@@ -13,8 +13,8 @@
     },
   },
   "packages": {
-    "ghostty-web": ["ghostty-web@github:rcarmo/ghostty-web#bbdea28", {}, "rcarmo-ghostty-web-bbdea28"],
+    "ghostty-web": ["ghostty-web@github:rcarmo/ghostty-web#a5d8c7b", {}, "rcarmo-ghostty-web-a5d8c7b"],
 
-    "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, ""],
+    "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
   }
 }
