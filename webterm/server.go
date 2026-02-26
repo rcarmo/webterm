@@ -1486,15 +1486,37 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 			return document.visibilityState === 'visible';
 		}
 
+		let dashboardHiddenAt = 0;
+
 		function onDashboardFocusChanged() {
 			if (dashboardCanRequestScreenshots()) {
-				processRefreshQueue();
+				// If the dashboard was hidden for more than a few seconds,
+				// clear ETags and refresh all tiles so the user sees current state.
+				const away = dashboardHiddenAt ? (Date.now() - dashboardHiddenAt) : 0;
+				dashboardHiddenAt = 0;
+				if (away > 3000) {
+					for (const key in etagBySlug) {
+						delete etagBySlug[key];
+					}
+					refreshAll();
+				} else {
+					processRefreshQueue();
+				}
+			} else {
+				dashboardHiddenAt = Date.now();
 			}
 		}
 
 		document.addEventListener('visibilitychange', onDashboardFocusChanged);
 		window.addEventListener('focus', onDashboardFocusChanged);
 		window.addEventListener('blur', onDashboardFocusChanged);
+
+		// Periodic fallback: refresh all tiles every 10s in case SSE events were missed.
+		setInterval(() => {
+			if (dashboardCanRequestScreenshots()) {
+				refreshAll();
+			}
+		}, 10000);
 
 		function processRefreshQueue() {
 			if (refreshQueue.length === 0 || !dashboardCanRequestScreenshots()) return;
