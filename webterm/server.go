@@ -2,6 +2,7 @@ package webterm
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha1"
@@ -555,13 +556,35 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	stdinQueue := make(chan stdinWrite, wsSendQueueMax)
 	defer close(stdinQueue)
+
+	// Coalesce small stdin writes (e.g. key repeats) to reduce syscall and locking overhead.
+	const stdinCoalesceMaxBytes = 4 * 1024
 	go func() {
+		var buf bytes.Buffer
 		for write := range stdinQueue {
-			if !write.session.SendBytes([]byte(write.data)) {
+			buf.Reset()
+			buf.WriteString(write.data)
+			for buf.Len() < stdinCoalesceMaxBytes {
+				select {
+				case next := <-stdinQueue:
+					buf.WriteString(next.data)
+				default:
+					goto flush
+				}
+			}
+		flush:
+			if !write.session.SendBytes(buf.Bytes()) {
 				log.Printf("stdin write failed route=%s remote=%s", routeKey, r.RemoteAddr)
 			}
 		}
 	}()
+
+	// Allocate the timeout timer once; avoid time.After() per stdin message.
+	stdinTimer := time.NewTimer(stdinWriteTimeout)
+	if !stdinTimer.Stop() {
+		<-stdinTimer.C
+	}
+	defer stdinTimer.Stop()
 
 	for {
 		messageType, payload, err := conn.ReadMessage()
@@ -589,12 +612,32 @@ func (s *LocalServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				if len(envelope) > 1 {
 					data, _ = envelope[1].(string)
 				}
+				write := stdinWrite{session: session, data: data}
 				select {
-				case stdinQueue <- stdinWrite{session: session, data: data}:
-				case <-time.After(stdinWriteTimeout):
-					log.Printf("stdin queue saturated route=%s remote=%s: disconnecting client", routeKey, r.RemoteAddr)
-					sendJSON([]any{"error", "Input backlog detected"})
-					return
+				case stdinQueue <- write:
+					// queued
+				default:
+					// Queue is full; wait briefly for it to drain.
+					if !stdinTimer.Stop() {
+						select {
+						case <-stdinTimer.C:
+						default:
+						}
+					}
+					stdinTimer.Reset(stdinWriteTimeout)
+					select {
+					case stdinQueue <- write:
+						if !stdinTimer.Stop() {
+							select {
+							case <-stdinTimer.C:
+							default:
+							}
+						}
+					case <-stdinTimer.C:
+						log.Printf("stdin queue saturated route=%s remote=%s: disconnecting client", routeKey, r.RemoteAddr)
+						sendJSON([]any{"error", "Input backlog detected"})
+						return
+					}
 				}
 			}
 		case "resize":
@@ -1168,7 +1211,9 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		const etagBySlug = {};
 		const refreshQueue = [];
 		const queuedRefresh = {};
-		let screenshotRequestInFlight = false;
+		// Allow limited parallelism when fetching thumbnails so large dashboards update faster.
+		const MAX_SCREENSHOT_CONCURRENCY = Math.max(2, Math.min(4, Math.floor((navigator.hardwareConcurrency || 4) / 2)));
+		let screenshotRequestsInFlight = 0;
 		const grid = document.getElementById('grid');
 		const subtitle = document.getElementById('subtitle');
 
@@ -1452,48 +1497,51 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		window.addEventListener('blur', onDashboardFocusChanged);
 
 		function processRefreshQueue() {
-			if (screenshotRequestInFlight || refreshQueue.length === 0 || !dashboardCanRequestScreenshots()) return;
-			const slug = refreshQueue.shift();
-			delete queuedRefresh[slug];
-			const card = cardsBySlug[slug];
-			if (!card || !card.img) {
-				setTimeout(processRefreshQueue, 0);
-				return;
+			if (refreshQueue.length === 0 || !dashboardCanRequestScreenshots()) return;
+
+			while (screenshotRequestsInFlight < MAX_SCREENSHOT_CONCURRENCY && refreshQueue.length > 0) {
+				const slug = refreshQueue.shift();
+				delete queuedRefresh[slug];
+				const card = cardsBySlug[slug];
+				if (!card || !card.img) {
+					continue;
+				}
+
+				screenshotRequestsInFlight++;
+				const url = screenshotEndpoint + '?route_key=' + encodeURIComponent(slug);
+				const controller = new AbortController();
+				const timeout = setTimeout(() => controller.abort(), 5000);
+				const headers = {};
+				if (etagBySlug[slug]) {
+					headers['If-None-Match'] = etagBySlug[slug];
+				}
+				fetch(url, { cache: 'no-cache', headers, signal: controller.signal })
+					.then((resp) => {
+						const nextETag = resp.headers.get('ETag');
+						if (nextETag) {
+							etagBySlug[slug] = nextETag;
+						}
+						if (resp.status === 304) return null;
+						if (!resp.ok) throw new Error('screenshot fetch failed');
+						return resp.blob();
+					})
+					.then((blob) => {
+						if (!blob) return;
+						const currentCard = cardsBySlug[slug];
+						if (!currentCard || !currentCard.img) return;
+						const previous = activeObjectURLBySlug[slug];
+						if (previous) URL.revokeObjectURL(previous);
+						const objectURL = URL.createObjectURL(blob);
+						activeObjectURLBySlug[slug] = objectURL;
+						currentCard.img.src = objectURL;
+					})
+					.catch(() => {})
+					.finally(() => {
+						clearTimeout(timeout);
+						screenshotRequestsInFlight--;
+						setTimeout(processRefreshQueue, 0);
+					});
 			}
-			screenshotRequestInFlight = true;
-			const url = screenshotEndpoint + '?route_key=' + encodeURIComponent(slug);
-			const controller = new AbortController();
-			const timeout = setTimeout(() => controller.abort(), 5000);
-			const headers = {};
-			if (etagBySlug[slug]) {
-				headers['If-None-Match'] = etagBySlug[slug];
-			}
-			fetch(url, { cache: 'no-cache', headers, signal: controller.signal })
-				.then((resp) => {
-					const nextETag = resp.headers.get('ETag');
-					if (nextETag) {
-						etagBySlug[slug] = nextETag;
-					}
-					if (resp.status === 304) return null;
-					if (!resp.ok) throw new Error('screenshot fetch failed');
-					return resp.blob();
-				})
-				.then((blob) => {
-					if (!blob) return;
-					const currentCard = cardsBySlug[slug];
-					if (!currentCard || !currentCard.img) return;
-					const previous = activeObjectURLBySlug[slug];
-					if (previous) URL.revokeObjectURL(previous);
-					const objectURL = URL.createObjectURL(blob);
-					activeObjectURLBySlug[slug] = objectURL;
-					currentCard.img.src = objectURL;
-				})
-				.catch(() => {})
-				.finally(() => {
-					clearTimeout(timeout);
-					screenshotRequestInFlight = false;
-					setTimeout(processRefreshQueue, 0);
-				});
 		}
 
 		function queueTileRefresh(slug) {
@@ -1570,7 +1618,7 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 			grid.innerHTML = '';
 			cardsBySlug = {};
 			refreshQueue.length = 0;
-			screenshotRequestInFlight = false;
+			screenshotRequestsInFlight = 0;
 			for (const key in queuedRefresh) {
 				delete queuedRefresh[key];
 			}
