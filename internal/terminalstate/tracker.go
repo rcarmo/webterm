@@ -74,9 +74,7 @@ func (t *Tracker) Feed(data []byte) error {
 	if len(t.screen.Dirty) > 0 {
 		t.changeCounter++
 		// Clear dirty set so subsequent feeds detect new changes
-		for k := range t.screen.Dirty {
-			delete(t.screen.Dirty, k)
-		}
+		clear(t.screen.Dirty)
 	}
 	return nil
 }
@@ -108,9 +106,6 @@ func (t *Tracker) Snapshot() Snapshot {
 		for col := 0; col < t.screen.Columns; col++ {
 			raw := t.screen.Buffer[row][col]
 			data := raw.Data
-			if data == "" {
-				data = " "
-			}
 			line[col] = Cell{
 				Data:       data,
 				FG:         colorToString(raw.Attr.Fg),

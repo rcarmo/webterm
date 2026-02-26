@@ -14,6 +14,12 @@ const MAX_MESSAGE_QUEUE_SIZE = 1000;
 const RESOURCE_CLEANUP_INTERVAL_MS = 30_000;
 /** Maximum bytes to buffer while the tab is hidden (256 KB) */
 const MAX_HIDDEN_BUFFER_BYTES = 256 * 1024;
+
+/** Batch stdin writes to reduce per-keystroke overhead and avoid WS/PTY backlogs */
+const STDIN_BATCH_DELAY_MS = 10;
+/** Flush stdin batch when it gets large (e.g. paste) */
+const STDIN_BATCH_MAX_CHARS = 8192;
+
 const BELL_EMOJI = "🔔";
 
 /** Shared Ghostty WASM instance (loaded once, reused across all terminals) */
@@ -663,6 +669,11 @@ class WebTerminal {
   private lastMessageAt = 0;
   private lastPongAt = 0;
   private messageQueue: [string, unknown][] = [];
+
+  // Stdin batching (coalesces key repeats into fewer WS frames)
+  private pendingStdin = "";
+  private pendingStdinTimer: number | undefined;
+
   private lastValidSize: { cols: number; rows: number } | null = null;
   private mobileInput: HTMLTextAreaElement | null = null;
   private mobileKeybar: HTMLElement | null = null;
@@ -828,7 +839,7 @@ class WebTerminal {
     // Handle terminal input
     this.terminal.onData((data) => {
       this.clearBellState();
-      this.send(["stdin", data]);
+      this.sendStdin(data);
     });
 
     this.terminal.onBell(() => {
@@ -947,7 +958,7 @@ class WebTerminal {
       if (!text) {
         return;
       }
-      this.send(["stdin", applyMobileModifiers(text)]);
+      this.sendStdin(applyMobileModifiers(text));
       textarea.value = "";
       this.deactivateModifiers();
       this.pendingCtrl = false;
@@ -1000,7 +1011,7 @@ class WebTerminal {
           e.preventDefault();
           e.stopPropagation();
           const toSend = isAlt ? applyAltModifier(ctrlApplied) : ctrlApplied;
-          this.send(["stdin", toSend]); // Ctrl+A=0x01, Ctrl+C=0x03, etc.
+          this.sendStdin(toSend); // Ctrl+A=0x01, Ctrl+C=0x03, etc.
           this.deactivateModifiers(); // Clear modifiers after physical Ctrl+key
           return;
         }
@@ -1010,7 +1021,7 @@ class WebTerminal {
         if (fnApplied) {
           e.preventDefault();
           e.stopPropagation();
-          this.send(["stdin", fnApplied]);
+          this.sendStdin(fnApplied);
           this.deactivateModifiers();
           return;
         }
@@ -1049,7 +1060,7 @@ class WebTerminal {
       if (seq) {
         e.preventDefault();
         e.stopPropagation();
-        this.send(["stdin", isAlt ? applyAltModifier(seq) : seq]);
+        this.sendStdin(isAlt ? applyAltModifier(seq) : seq);
         // Always clear modifiers after any key
         this.deactivateModifiers();
       }
@@ -1077,7 +1088,7 @@ class WebTerminal {
         const toSend = applyModifiers(event.key, useShift, useCtrl, useAlt, useFn);
         event.preventDefault();
         event.stopPropagation();
-        this.send(["stdin", toSend]);
+        this.sendStdin(toSend);
         handled = true;
       } else {
         let seq: string | null = null;
@@ -1120,7 +1131,7 @@ class WebTerminal {
         if (seq) {
           event.preventDefault();
           event.stopPropagation();
-          this.send(["stdin", useAlt ? applyAltModifier(seq) : seq]);
+          this.sendStdin(useAlt ? applyAltModifier(seq) : seq);
           handled = true;
         }
       }
@@ -1319,7 +1330,7 @@ class WebTerminal {
           key = applyAltModifier(key);
         }
 
-        this.send(["stdin", key]);
+        this.sendStdin(key);
         this.deactivateModifiers();
       });
     });
@@ -1535,7 +1546,7 @@ class WebTerminal {
 
   /** Validate terminal dimensions */
   private isValidSize(cols: number, rows: number): boolean {
-    return cols >= 2 && cols <= 500 && rows >= 1 && rows <= 200;
+    return cols >= 2 && cols <= 500 && rows >= 1 && rows <= 500;
   }
 
   /** Connect to WebSocket server */
@@ -1557,7 +1568,8 @@ class WebTerminal {
       this.element.classList.add("-connected");
       this.element.classList.remove("-disconnected");
 
-      // Process any queued messages
+      // Flush any batched stdin and process queued messages
+      this.flushStdin();
       this.processMessageQueue();
 
       // Send initial size
@@ -1723,8 +1735,50 @@ class WebTerminal {
     this.connect();
   }
 
+  /** Queue stdin data for batched sending */
+  private sendStdin(data: string): void {
+    if (!data) {
+      return;
+    }
+
+    this.pendingStdin += data;
+
+    // Flush immediately for large payloads (e.g. paste) to avoid excessive buffering.
+    if (this.pendingStdin.length >= STDIN_BATCH_MAX_CHARS) {
+      this.flushStdin();
+      return;
+    }
+
+    if (this.pendingStdinTimer) {
+      return;
+    }
+
+    this.pendingStdinTimer = window.setTimeout(() => {
+      this.pendingStdinTimer = undefined;
+      this.flushStdin();
+    }, STDIN_BATCH_DELAY_MS);
+  }
+
+  private flushStdin(): void {
+    if (this.pendingStdinTimer) {
+      clearTimeout(this.pendingStdinTimer);
+      this.pendingStdinTimer = undefined;
+    }
+    if (!this.pendingStdin) {
+      return;
+    }
+    const chunk = this.pendingStdin;
+    this.pendingStdin = "";
+    this.send(["stdin", chunk]);
+  }
+
   /** Send message to server with queueing support */
   private send(message: [string, unknown]): void {
+    // Preserve ordering: flush any pending stdin before non-stdin messages (resize/ping/etc).
+    if (message[0] !== "stdin" && this.pendingStdin) {
+      this.flushStdin();
+    }
+
     if (this.messageQueue.length >= MAX_MESSAGE_QUEUE_SIZE) {
       this.messageQueue = this.messageQueue.slice(-Math.floor(MAX_MESSAGE_QUEUE_SIZE / 2));
       console.warn("[webterm] Message queue overflow; trimmed old messages");
@@ -1775,6 +1829,11 @@ class WebTerminal {
   dispose(): void {
     this.stopResourceCleanup();
     this.stopHeartbeatWatchdog();
+    if (this.pendingStdinTimer) {
+      clearTimeout(this.pendingStdinTimer);
+      this.pendingStdinTimer = undefined;
+    }
+    this.pendingStdin = "";
     if (this.resizeDebounceTimer) {
       clearTimeout(this.resizeDebounceTimer);
       this.resizeDebounceTimer = undefined;

@@ -40,30 +40,74 @@ func RenderTerminalPNG(
 		return nil, nil
 	}
 
-	bgColor := mustParseHexColor(background)
+	bgFillColor := mustParseHexColor(background)
 	img := image.NewRGBA(image.Rect(0, 0, imgWidth, imgHeight))
-	draw.Draw(img, img.Bounds(), &image.Uniform{bgColor}, image.Point{}, draw.Src)
+	draw.Draw(img, img.Bounds(), &image.Uniform{bgFillColor}, image.Point{}, draw.Src)
+
+	// Cache parsed colors to avoid per-cell hex parsing overhead on large terminals.
+	colorCache := map[string]color.RGBA{}
+	parseColor := func(hex string) color.RGBA {
+		if c, ok := colorCache[hex]; ok {
+			return c
+		}
+		c := mustParseHexColor(hex)
+		colorCache[hex] = c
+		return c
+	}
 
 	for rowIdx := 0; rowIdx < len(buffer); rowIdx++ {
 		row := buffer[rowIdx]
 		rectY := pngPadding + rowIdx*cellHeight
 		for col := 0; col < len(row); col++ {
 			cell := row[col]
-			if cell.Data == "" && cell.BG == "" {
+			charData := cell.Data
+
+			// Fast-path skip for visually empty cells (default background, no reverse video).
+			if (charData == "" || charData == " ") && !cell.Reverse &&
+				(cell.BG == "" || strings.EqualFold(cell.BG, "default")) {
 				continue
 			}
+
 			x := pngPadding + col*pngCharWidth
-			fg := colorToHex(cell.FG, true, palette, foreground, background)
-			bg := colorToHex(cell.BG, false, palette, foreground, background)
+			fgHex := colorToHex(cell.FG, true, palette, foreground, background)
+			bgHex := colorToHex(cell.BG, false, palette, foreground, background)
 			if cell.Reverse {
-				fg, bg = bg, fg
+				fgHex, bgHex = bgHex, fgHex
 			}
-			bgColor := mustParseHexColor(bg)
-			coverage := uint8(0)
-			if cell.Data != "" {
-				coverage = coverageForRune(firstRune(cell.Data))
+
+			// If there's no glyph, only render background when it differs from the image background.
+			if charData == "" || charData == " " {
+				if bgHex == background {
+					continue
+				}
+				draw.Draw(
+					img,
+					image.Rect(x, rectY, x+pngCharWidth, rectY+cellHeight),
+					&image.Uniform{parseColor(bgHex)},
+					image.Point{},
+					draw.Src,
+				)
+				continue
 			}
-			cellColor := blendColors(mustParseHexColor(fg), bgColor, coverage)
+
+			bgColor := parseColor(bgHex)
+			fgColor := parseColor(fgHex)
+			coverage := coverageForRune(firstRune(charData))
+			var cellColor color.RGBA
+			switch coverage {
+			case 0:
+				cellColor = bgColor
+			case 255:
+				cellColor = fgColor
+			default:
+				cellColor = blendColors(fgColor, bgColor, coverage)
+			}
+
+			// Skip drawing default background cells (background already filled).
+			if cellColor == bgFillColor {
+				continue
+			}
+
 			draw.Draw(
 				img,
 				image.Rect(x, rectY, x+pngCharWidth, rectY+cellHeight),

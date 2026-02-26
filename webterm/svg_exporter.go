@@ -71,18 +71,40 @@ func RenderTerminalSVG(
 		for col := 0; col < len(row); col++ {
 			cell := row[col]
 			charData := cell.Data
-			if charData == "" {
+
+			blankGlyph := charData == "" || charData == " "
+			defaultBG := cell.BG == "" || strings.EqualFold(cell.BG, "default")
+			// If there's no glyph, no underline, no reverse, and the background is default,
+			// this cell is visually empty.
+			if blankGlyph && !cell.Underscore && !cell.Reverse && defaultBG {
 				continue
 			}
+
 			x := 10 + float64(col)*charWidth
 			fg := colorToHex(cell.FG, true, palette, foreground, background)
 			bg := colorToHex(cell.BG, false, palette, foreground, background)
 			if cell.Reverse {
 				fg, bg = bg, fg
 			}
+
+			// Render background even for empty cells (important for reverse video / colored spans).
 			if bg != background {
 				b.WriteString(fmt.Sprintf(`<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="%s"/>`, x, rectY, charWidth+0.5, cellHeight+0.5, bg))
 			}
+
+			// Only render text for visible glyphs (or underlined blanks).
+			if charData == "" {
+				if cell.Underscore {
+					charData = " "
+				} else {
+					continue
+				}
+			}
+			if charData == " " && !cell.Underscore {
+				// Space glyphs are visually empty; keep background only.
+				continue
+			}
+
 			attrs := []string{fmt.Sprintf(`x="%.1f"`, x)}
 			if fg != foreground {
 				attrs = append(attrs, `fill="`+fg+`"`)
