@@ -1240,6 +1240,14 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 			updateDashboardTitle();
 		}
 
+		function syncAllBellStates() {
+			for (const tile of tiles) {
+				if (tile && tile.slug) {
+					applyBellState(tile.slug);
+				}
+			}
+		}
+
 		function clearBellState(slug) {
 			if (!slug) return;
 			localStorage.removeItem(bellStorageKey(slug));
@@ -1490,6 +1498,11 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 		function onDashboardFocusChanged() {
 			if (dashboardCanRequestScreenshots()) {
+				// Re-check bell state for all tiles — the terminal tab may have
+				// cleared its localStorage entry while we were hidden, and the
+				// storage event only fires across tabs, not within the same tab.
+				syncAllBellStates();
+
 				// If the dashboard was hidden for more than a few seconds,
 				// clear ETags and refresh all tiles so the user sees current state.
 				const away = dashboardHiddenAt ? (Date.now() - dashboardHiddenAt) : 0;
