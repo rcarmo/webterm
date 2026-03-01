@@ -737,7 +737,14 @@ class WebTerminal {
     return `webterm:bell:${this.routeKey}`;
   }
 
+  private bellSuppressUntil = 0;
+
   private setBellActive(): void {
+    // Suppress bells briefly after returning to the tab so that
+    // buffered output processed on visibility change doesn't
+    // immediately re-trigger the indicator we just cleared.
+    if (Date.now() < this.bellSuppressUntil) return;
+
     if (!this.bellActive) {
       this.bellActive = true;
       document.title = `${BELL_EMOJI} ${this.baseTitle}`;
@@ -749,6 +756,10 @@ class WebTerminal {
   }
 
   private clearBellState(): void {
+    // Suppress further bells for a short window so that buffered
+    // output arriving right after focus doesn't re-set the indicator.
+    this.bellSuppressUntil = Date.now() + 1000;
+
     const key = this.bellStorageKey();
     if (key) {
       localStorage.removeItem(key);
@@ -844,6 +855,11 @@ class WebTerminal {
 
     this.terminal.onBell(() => {
       this.setBellActive();
+    });
+
+    // Clear bell on any mouse interaction with the terminal
+    this.addTrackedListener(this.element, "mousedown", () => {
+      if (this.bellActive) this.clearBellState();
     });
 
     // Handle resize
