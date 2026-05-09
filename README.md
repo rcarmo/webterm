@@ -6,7 +6,9 @@
 
 This repository is the Go port of the original Python implementation, which is preserved in the `python` branch.
 
-https://github.com/user-attachments/assets/62c52183-83a3-4fb5-97b1-ed001de4f53a
+<video src="https://github.com/user-attachments/assets/62c52183-83a3-4fb5-97b1-ed001de4f53a" controls muted playsinline></video>
+
+[Download MP4](https://github.com/user-attachments/assets/62c52183-83a3-4fb5-97b1-ed001de4f53a)
 
 ## Features
 
