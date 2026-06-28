@@ -5,8 +5,7 @@ on:
   push:
     branches: [ main ]
 
-# Least privilege: this workflow only needs to read the repo. Pinning it here
-# means a fork PR's GITHUB_TOKEN stays read-only even if the org default changes.
+# Read-only token; fork PRs can't escalate even if the org default changes.
 permissions:
   contents: read
 

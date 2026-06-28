@@ -7,31 +7,11 @@
 # labels on the lightweight tag containers below. Each tile attaches to a
 # persistent tmux session inside the target container.
 #
-# ---------------------------------------------------------------------------
-# SECURITY NOTE
-# ---------------------------------------------------------------------------
-# webterm grants full interactive shell access to any Docker container it is
-# configured to watch, and has NO built-in authentication. Anyone who can
-# reach the webterm HTTP port can open a terminal into your containers.
-#
-# This file applies two layers of baseline hardening:
-#
-# 1. Loopback bind (127.0.0.1:8080:8080): the raw terminal port is only
-#    reachable from localhost. For multi-user or networked deployments, put
-#    a reverse proxy with authentication (e.g. Nginx + OAuth2 Proxy,
-#    Authelia, Traefik ForwardAuth, or a Tailscale serve rule) in front
-#    of it before exposing it to any network.
-#
-# 2. Docker socket (see note below): webterm mounts /var/run/docker.sock to
-#    discover containers and open exec sessions. The raw Docker socket gives
-#    a process root-equivalent access to the host (it can spawn privileged
-#    containers, mount host paths, etc.). See the "Least-privilege socket
-#    proxy" section further down for the recommended long-term hardening;
-#    shipping it here is deferred because webterm currently dials the Docker
-#    socket as a Unix socket and performs HTTP/1.1 Upgrade for exec start,
-#    which requires a Unix-socket-to-Unix-socket transparent proxy rather
-#    than the more common TCP-based docker-socket-proxy.
-# ---------------------------------------------------------------------------
+# webterm has NO built-in auth — anyone who reaches port 8080 can open a shell.
+# Loopback bind (127.0.0.1:8080:8080) keeps the port local; put a reverse proxy
+# with authentication in front before exposing it to any network.
+# The Docker socket grants root-equivalent host access; see the commented
+# socket-proxy section below for the current blocker on restricting it.
 
 services:
   webterm:
@@ -87,8 +67,8 @@ services:
 # ---------------------------------------------------------------------------
 # Least-privilege socket proxy (NOT active — requires live verification)
 # ---------------------------------------------------------------------------
-# webterm's Docker API surface (from reading docker_watcher.go,
-# docker_exec_session.go, docker_stats.go, docker_http.go):
+# webterm's Docker API surface (from docker_watcher.go, docker_exec_session.go,
+# docker_stats.go, docker_http.go):
 #
 #   GET  /containers/json?filters=...    container list (watch + stats)
 #   GET  /containers/{id}/json           container inspect (on start event)
@@ -99,51 +79,26 @@ services:
 #   POST /exec/{execId}/start            exec start (HTTP/1.1 Upgrade to TCP)
 #   POST /exec/{execId}/resize           exec resize
 #
-# Restricting access to only these endpoints would substantially reduce the
-# blast radius if the webterm container is compromised.
-#
-# BLOCKER: webterm dials the Docker socket directly as a Unix socket and
-# performs an HTTP/1.1 Connection: Upgrade for exec start. Standard TCP-based
-# Docker socket proxies (e.g. tecnativa/docker-socket-proxy) expose a TCP
-# endpoint that webterm cannot reach without modifying DockerSocketPath() and
-# the exec start code to support non-Unix transports.
-#
-# To enable least-privilege socket access:
-#   1. Add TCP Docker endpoint support to webterm (or a Unix→Unix filtering
-#      proxy that transparently handles the Upgrade for exec start), OR
-#   2. Use a purpose-built solution such as the Docker Engine's built-in
-#      "Authorization Plugin" API (OPA/Rego policy) which operates at the
-#      daemon level without requiring client changes.
-#
-# The block below shows what a tecnativa/docker-socket-proxy configuration
-# would look like once webterm supports TCP Docker endpoints. It is provided
-# for documentation; do NOT uncomment without first adding TCP transport
-# support and verifying exec through the proxy on a live host.
+# BLOCKER: webterm dials the Docker socket directly as a Unix socket and performs
+# an HTTP/1.1 Connection: Upgrade for exec start. TCP-based proxies (e.g.
+# tecnativa/docker-socket-proxy) expose a TCP endpoint that webterm cannot reach
+# without adding non-Unix transport support to DockerSocketPath() and exec start.
 #
 #  docker-socket-proxy:
 #    image: tecnativa/docker-socket-proxy:latest
 #    restart: unless-stopped
 #    environment:
-#      # Allow only the Docker API surface webterm needs.
 #      CONTAINERS: 1   # GET /containers/json, /containers/{id}/json, /containers/{id}/stats
 #      EVENTS: 1       # GET /events
 #      EXEC: 1         # POST /exec/{id}/start, POST /exec/{id}/resize
 #      POST: 1         # Allow POST method on the above resources
 #      PING: 1         # GET /_ping for availability check
-#      # Everything else (BUILD, IMAGES, NETWORKS, VOLUMES, SERVICES, etc.) is
-#      # denied by default — this is the whole point of the proxy.
 #    volumes:
 #      - /var/run/docker.sock:/var/run/docker.sock:ro
 #    networks:
 #      - webterm-internal
 #
-#  # webterm service changes required when using the proxy:
-#  #   - Remove the /var/run/docker.sock volume mount from the webterm service
-#  #   - Change DOCKER_HOST to: tcp://docker-socket-proxy:2375
-#  #   - Add webterm to the webterm-internal network
-#  #   - Add TCP transport support to webterm (see blocker above)
-#
 #networks:
 #  webterm-internal:
 #    driver: bridge
-#    internal: true   # no outbound internet access for the proxy
+#    internal: true

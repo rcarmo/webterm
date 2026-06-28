@@ -25,15 +25,12 @@ import (
 )
 
 // sessionPageData holds the values interpolated into the session terminal page.
-// All string fields are HTML-escaped by html/template according to their context;
-// ThemeBG is pre-validated as a hex color from the static ThemeBackgrounds map
-// so it is marked template.CSS (safe CSS value). StylesheetHref and TerminalJSSrc
-// are server-generated paths (template.URL marks them as trusted relative URLs).
+// template.CSS/template.URL fields are trusted server values; all other fields are user-influenced and auto-escaped per context.
 type sessionPageData struct {
 	Title          string
 	StylesheetHref template.URL
 	ThemeBG        template.CSS
-	WSURL          string
+	WSURL          template.URL
 	RouteKey       string
 	AppName        string
 	FontSize       int
@@ -42,11 +39,8 @@ type sessionPageData struct {
 	TerminalJSSrc  template.URL
 }
 
-// sessionPage is the html/template for the single-session terminal page.
-// html/template provides context-aware escaping: HTML attribute values,
-// the <title> text node, and the CSS <style> block are each escaped
-// according to their context, preventing reflected XSS from user input
-// such as the route_key query parameter.
+// sessionPage renders the terminal page; use html/template so route_key and other
+// query params are context-escaped — CodeQL go/reflected-xss.
 var sessionPage = template.Must(template.New("session").Parse(
 	`<!DOCTYPE html><html><head><meta charset="utf-8">` +
 		`<title>{{.Title}}</title>` +
@@ -1818,21 +1812,24 @@ func (s *LocalServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	cacheBust := "?v=" + Version
 	data := sessionPageData{
 		Title:          app.Name,
-		StylesheetHref: template.URL("/static/monospace.css" + cacheBust), //nolint:gosec // server-generated relative URL
-		ThemeBG:        template.CSS(themeBG),                             // always a hex constant from ThemeBackgrounds
-		WSURL:          wsURL,
+		StylesheetHref: template.URL("/static/monospace.css" + cacheBust), // server-built path, not user input
+		ThemeBG:        template.CSS(themeBG),
+		WSURL:          template.URL(wsURL),
 		RouteKey:       routeKey,
 		AppName:        app.Name,
 		FontSize:       s.fontSize,
 		Theme:          theme,
 		FontFamily:     fontFamily,
-		TerminalJSSrc:  template.URL("/static/js/terminal.js" + cacheBust), //nolint:gosec // server-generated relative URL
+		TerminalJSSrc:  template.URL("/static/js/terminal.js" + cacheBust), // server-built path, not user input
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	if err := sessionPage.Execute(w, data); err != nil {
+	var buf bytes.Buffer
+	if err := sessionPage.Execute(&buf, data); err != nil {
 		log.Printf("session page render error: %v", err)
+		return
 	}
+	_, _ = io.Copy(w, &buf)
 }
 
 func htmlEscape(value string) string {

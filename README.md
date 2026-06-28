@@ -109,10 +109,10 @@ go run ./cmd/webterm -- --compose-manifest ./prod.compose.yaml
 
 ### Baseline hardening checklist
 
-- **Bind to loopback**: use `127.0.0.1:8080:8080` in compose/run (the canonical `prod.compose.yaml` does this by default) and put a reverse proxy with authentication in front — Nginx + OAuth2 Proxy, Authelia, Traefik ForwardAuth, or a Tailscale serve/ACL rule.
-- **Docker socket scope**: the raw Docker socket (`/var/run/docker.sock`) grants root-equivalent host access. Restricting the Docker API endpoints available to webterm is strongly recommended for production. See the commented "Least-privilege socket proxy" section in `prod.compose.yaml` for what this would look like and for the current implementation blocker (exec requires a Unix-socket HTTP Upgrade that standard TCP-based socket proxies cannot proxy without changes to webterm).
-- **Container isolation**: webterm containers that run `docker exec` into sibling containers can inherit those containers' filesystem and capabilities. Run target containers with minimal privileges (`--cap-drop ALL`, `--read-only`, non-root users).
-- **TLS**: if you deploy behind a reverse proxy, terminate TLS at the proxy. Webterm itself does not provide TLS.
+- Bind to loopback (`127.0.0.1:8080:8080`, as in `prod.compose.yaml`) and put a reverse proxy with authentication in front.
+- The Docker socket grants root-equivalent host access; see the commented socket-proxy section in `prod.compose.yaml` for the endpoint inventory and the current blocker (webterm hardcodes a Unix-socket dial, so TCP-based proxies don't work without changes to the exec transport).
+- Run target containers with minimal privileges (`--cap-drop ALL`, `--read-only`, non-root users) to limit what a `docker exec` session can reach.
+- Terminate TLS at the reverse proxy; webterm does not provide TLS.
 
 ## Development (Makefile-first)
 
