@@ -9,7 +9,7 @@ import (
 const (
 	DefaultHost           = "0.0.0.0"
 	DefaultPort           = 8080
-	DefaultTheme          = "xterm"
+	DefaultTheme          = "md"
 	DefaultFontSize       = 16
 	DefaultTerminalWidth  = 132
 	DefaultTerminalHeight = 45

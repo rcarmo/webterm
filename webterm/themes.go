@@ -17,6 +17,7 @@ var ThemeBackgrounds = map[string]string{
 	"miasma":     "#222222",
 	"github":     "#1c2128",
 	"gotham":     "#0c1014",
+	"md":         "#1b1c1e",
 }
 
 var ThemePalettes = map[string]map[string]string{
@@ -339,5 +340,28 @@ var ThemePalettes = map[string]map[string]string{
 		"brightmagenta": "#bb9af7",
 		"brightcyan":    "#7dcfff",
 		"brightwhite":   "#c0caf5",
+	},
+	// md — Architectural Editorial (matthewdart-labs/md-brand). ANSI-16 derived
+	// from tokens/terminal/md-architectural-editorial.* — keep in sync with
+	// tokens.json color.terminal.
+	"md": {
+		"background":    "#1b1c1e",
+		"foreground":    "#f0ede6",
+		"black":         "#242628",
+		"red":           "#c96f4a", // terracotta — error
+		"green":         "#8a9b7a", // moss — success
+		"yellow":        "#c4a84f", // amber — warn / the spark
+		"blue":          "#7c99a8", // slate — info
+		"magenta":       "#af7497", // rose (extended hue)
+		"cyan":          "#6e9e96", // teal (extended hue)
+		"white":         "#e8e1d4",
+		"brightblack":   "#767a80",
+		"brightred":     "#e08a63",
+		"brightgreen":   "#a6b796",
+		"brightyellow":  "#d8cc72",
+		"brightblue":    "#9ab6c4",
+		"brightmagenta": "#cc8eb4",
+		"brightcyan":    "#8cbab2",
+		"brightwhite":   "#f5f2ec",
 	},
 }
